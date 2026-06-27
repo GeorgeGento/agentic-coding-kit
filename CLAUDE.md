@@ -1,29 +1,35 @@
 # Claude Code — Global Guidelines
 
-My global configuration for Claude Code. It stays **lean on purpose**: the universal rules live in this file and apply to every task; the deep, situational rules live in `guidelines/` and are read **on demand** so they only cost context when they are relevant.
+My global configuration for Claude Code. It stays **lean on purpose**: universal rules live in this file; a few core guidelines are **imported every session**; the rest live in `guidelines/` and are read **on demand** so they only cost context when relevant.
 
 ## How to use this file
 
 1. **Always-on rules** (bottom of this file) apply to **every** task. Follow them without being asked.
-2. Before doing substantive work in a domain, **read the matching guideline file first** (table below) and treat it as binding for that work.
-3. For setting up this machine (skills, tools, deploy), see [`README.md`](README.md).
-4. A project's own `CLAUDE.md` always **wins over these global rules** for that project.
+2. **Always-loaded guidelines** (next section) are imported every session — treat them as binding.
+3. For other domains, **read the matching guideline file first** (router table below) before doing the work.
+4. For setting up this machine (skills, tools, deploy), see [`README.md`](README.md).
+5. A project's own `CLAUDE.md` always **wins over these global rules** for that project.
 
-## When to read which guideline
+## Always-loaded guidelines
+
+Imported into every session because they apply to nearly every task — treat as binding:
+
+@guidelines/coding-standards.md
+@guidelines/workflow.md
+@guidelines/testing.md
+
+## When to read which guideline (on demand)
 
 | If the task involves… | Read first |
 | --- | --- |
-| Writing or editing **any** code | [`guidelines/coding-standards.md`](guidelines/coding-standards.md) |
-| Planning, scoping, reviewing, multi-step work | [`guidelines/workflow.md`](guidelines/workflow.md) |
 | git, commits, versioning, `.env`, deploys, remote servers | [`guidelines/git-and-versioning.md`](guidelines/git-and-versioning.md) |
 | Anything security / auth / secrets / privacy / logging | [`guidelines/security-privacy-logging.md`](guidelines/security-privacy-logging.md) |
 | Installing or upgrading packages | [`guidelines/dependencies-supply-chain.md`](guidelines/dependencies-supply-chain.md) |
 | Angular / frontend / Tailwind | [`guidelines/angular-frontend.md`](guidelines/angular-frontend.md) |
 | Node / NestJS / API / MongoDB | [`guidelines/backend-nodejs.md`](guidelines/backend-nodejs.md) |
 | UI/UX, components, accessibility, SEO | [`guidelines/ux-ui-seo.md`](guidelines/ux-ui-seo.md) |
-| Writing tests, or verifying behavior | [`guidelines/testing.md`](guidelines/testing.md) |
 
-> The table is the **router**. If a task spans several rows, read each relevant file before editing. Reading guideline files is non-destructive discovery — never ask permission to read them.
+> The table is the **router** for the on-demand files. If a task spans several rows, read each relevant file before editing. Reading guideline files is non-destructive discovery — never ask permission to read them.
 
 ## Always-on rules (apply everywhere — no file needed)
 

@@ -7,7 +7,7 @@ A portable, general-purpose Claude Code setup: a lean router `CLAUDE.md` plus to
 | Path | What | Loaded |
 | --- | --- | --- |
 | `CLAUDE.md` | Router — always-on rules + a "when to read what" table | every session |
-| `guidelines/` | Topic rules: coding-standards, workflow, testing, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo | on demand |
+| `guidelines/` | Topic rules: coding-standards, workflow, testing, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo | core 3 imported every session; rest on demand |
 | `skills/` | Bundled skill: `setup` (`/setup`) — installs the rest | when triggered |
 | `deploy.py` | Copy/symlink everything into `~/.claude` | — |
 | `README.md` | This file — orientation + machine setup | — |
