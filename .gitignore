@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.py[cod]
+
+# graphify generated output
+graphify-out/
+
+# deploy.py backups (in case anyone deploys into the repo by mistake)
+*.bak-*
+
+# OS cruft
+.DS_Store
+Thumbs.db
