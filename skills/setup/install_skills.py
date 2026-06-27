@@ -55,6 +55,8 @@ CATALOG: dict[str, dict] = {
         path="skills/code-reviewer", trust="community - review first", group="Quality", default=False),
     "secure-code-guardian": dict(repo="https://github.com/Jeffallan/claude-skills",
         path="skills/secure-code-guardian", trust="community - review first", group="Quality", default=False),
+    "caveman": dict(repo="https://github.com/JuliusBrussee/caveman",
+        path="skills/caveman", trust="community - JuliusBrussee (MIT)", group="Tone", default=True),
     "graphify": dict(via="pip", package="graphifyy", module="graphify", cli_args=["install"],
         trust="MIT - safishamsi (self-updating)", group="Knowledge graph", default=True),
 }

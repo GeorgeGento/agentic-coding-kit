@@ -45,6 +45,7 @@ Default set covers Angular + UI/UX + TypeScript + NestJS essentials.
 | `nestjs-expert` | `Jeffallan/claude-skills` | community | ✅ |
 | `code-reviewer` | `Jeffallan/claude-skills` | community | — |
 | `secure-code-guardian` | `Jeffallan/claude-skills` | community | — |
+| `caveman` | `JuliusBrussee/caveman` | community (MIT) | ✅ |
 | `graphify` | `pip: graphifyy` | MIT · self-updating | ✅ |
 
 Most skills are git-fetched into `~/.claude/skills`; **`graphify`** is a Python package — `/setup` runs `pip install graphifyy` + `graphify install`, which installs it to its own tool-managed location. The registry lives in [`install_skills.py`](install_skills.py) — add/remove entries there.

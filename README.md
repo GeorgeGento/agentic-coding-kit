@@ -30,13 +30,12 @@ A skill is a folder under `~/.claude/skills/<name>/` with a `SKILL.md` (frontmat
 ### Bundled (deployed by `deploy.py`)
 
 - **`setup`** — `/setup`: installs the curated stack skills (see below).
-- **caveman** (`/caveman`, terse tone) is *not* bundled — add the folder yourself if you want it.
 
 ### Stack skills — `/setup`
 
 Run **`/setup`** to install the curated skills (re-run to update). Default set:
 
-- `angular-developer`, `frontend-design`, `webapp-testing`, `typescript-pro`, `nestjs-expert` — fetched fresh from source into `~/.claude/skills`.
+- `angular-developer`, `frontend-design`, `webapp-testing`, `typescript-pro`, `nestjs-expert`, `caveman` — fetched fresh from source into `~/.claude/skills`. (`caveman` is the terse-tone skill; it's **on by default every session** via a rule in `CLAUDE.md` — turn off with "stop caveman" / "normal mode".)
 - **`graphify`** (`/graphify`) — installed via `pip install graphifyy` + its own installer (MIT, self-updating). Turns any folder into a knowledge graph (HTML + JSON + `GRAPH_REPORT.md`); for a project with a `graphify-out/` dir, read `graphify-out/GRAPH_REPORT.md` before architecture questions.
 
 `/setup --list` shows the full catalog (also `angular-new-app`, `theme-factory`, `code-reviewer`, `secure-code-guardian`); `/setup --all` installs everything.
@@ -56,7 +55,7 @@ Run **`/setup`** to install the curated skills (re-run to update). Default set:
 ## New-machine checklist
 
 - [ ] `python deploy.py` — installs `CLAUDE.md` + `README.md` + `guidelines/` + bundled `skills/setup` into `~/.claude/`
-- [ ] `/setup` — installs the stack skills (angular-developer, frontend-design, webapp-testing, typescript-pro, nestjs-expert, graphify)
+- [ ] `/setup` — installs the stack skills (angular-developer, frontend-design, webapp-testing, typescript-pro, nestjs-expert, caveman, graphify)
 - [ ] Add MCP + plugins manually: Context7, Playwright, TypeScript LSP
 - [ ] Set model/theme via `/config`; add a permissions allowlist
 - [ ] Confirm git identity (`git config --global user.name/.email`) and SSH keys exist
