@@ -46,11 +46,17 @@ class Deployer:
         self.steps += 1
 
     def _backup(self, dest: Path) -> None:
-        """Move an existing dest out of the way before we write over it."""
+        """Move an existing dest out of the way before we write over it.
+
+        Backups live in <target>/.deploy-backups/, NOT next to dest: a sibling
+        `<skill>.bak-*` inside skills/ shows up as a phantom skill in Claude Code.
+        """
         if dest.is_symlink() or dest.exists():
-            bak = dest.with_name(f"{dest.name}.bak-{self.stamp}")
-            self.log(f"backup  {dest}  ->  {bak.name}")
+            bak_dir = self.target / ".deploy-backups"
+            bak = bak_dir / f"{dest.name}.bak-{self.stamp}"
+            self.log(f"backup  {dest}  ->  .deploy-backups/{bak.name}")
             if not self.dry:
+                bak_dir.mkdir(parents=True, exist_ok=True)
                 shutil.move(os.fspath(dest), os.fspath(bak))  # handles file/dir/symlink
 
     def _place(self, src: Path, dest: Path) -> None:

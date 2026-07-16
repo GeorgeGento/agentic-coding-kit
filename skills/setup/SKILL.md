@@ -1,6 +1,6 @@
 ---
 name: setup
-description: install a curated set of Claude Code skills (Angular, UI/UX, TypeScript, Node/NestJS) into ~/.claude/skills, fetched fresh from source
+description: install curated Claude Code skills and subagents for your stack (Angular, React, Vue, Node/NestJS, TypeScript, Electron, Flutter, UI/UX, quality/review), fetched fresh from source into ~/.claude/skills and ~/.claude/agents
 trigger: /setup
 ---
 
@@ -32,23 +32,38 @@ Install a curated set of high-quality skills for this stack into `~/.claude/skil
 
 ## Catalog
 
-Default set covers Angular + UI/UX + TypeScript + NestJS essentials.
+Lean defaults (✅) cover the Angular + NestJS + TypeScript stack; everything else is opt-in so each user installs only what matches their stack (`--only`, or `--all`).
 
-| skill | source | trust | default |
+| name | kind | source | default |
 | --- | --- | --- | --- |
-| `angular-developer` | `angular/skills` | official · Angular team | ✅ |
-| `angular-new-app` | `angular/skills` | official · Angular team | — |
-| `frontend-design` | `anthropics/skills` | official · Anthropic | ✅ |
-| `webapp-testing` | `anthropics/skills` | official · Anthropic | ✅ |
-| `theme-factory` | `anthropics/skills` | official · Anthropic | — |
-| `typescript-pro` | `Jeffallan/claude-skills` | community | ✅ |
-| `nestjs-expert` | `Jeffallan/claude-skills` | community | ✅ |
-| `code-reviewer` | `Jeffallan/claude-skills` | community | — |
-| `secure-code-guardian` | `Jeffallan/claude-skills` | community | — |
-| `caveman` | `JuliusBrussee/caveman` | community (MIT) | ✅ |
-| `graphify` | `pip: graphifyy` | MIT · self-updating | ✅ |
+| `angular-developer` | skill | `angular/skills` (official) | ✅ |
+| `angular-new-app` | skill | `angular/skills` (official) | — |
+| `frontend-design` | skill | `anthropics/skills` (official) | ✅ |
+| `webapp-testing` | skill | `anthropics/skills` (official) | ✅ |
+| `theme-factory` | skill | `anthropics/skills` (official) | — |
+| `typescript-pro` | skill | `Jeffallan/claude-skills` | ✅ |
+| `javascript-pro` | skill | `Jeffallan/claude-skills` | — |
+| `nestjs-expert` | skill | `Jeffallan/claude-skills` | ✅ |
+| `react-expert` | skill | `Jeffallan/claude-skills` | — |
+| `nextjs-developer` | skill | `Jeffallan/claude-skills` | — |
+| `react-native-expert` | skill | `Jeffallan/claude-skills` | — |
+| `vue-expert` | skill | `Jeffallan/claude-skills` | — |
+| `electron-pro` | **agent** | `VoltAgent/awesome-claude-code-subagents` | — |
+| `flutter-expert` | skill | `Jeffallan/claude-skills` | — |
+| `code-reviewer` | skill | `Jeffallan/claude-skills` | — |
+| `secure-code-guardian` | skill | `Jeffallan/claude-skills` | — |
+| `playwright-expert` | skill | `Jeffallan/claude-skills` | — |
+| `code-reviewer-agent` | **agent** | `VoltAgent/awesome-claude-code-subagents` | — |
+| `security-auditor-agent` | **agent** | `VoltAgent/awesome-claude-code-subagents` | — |
+| `caveman` | skill | `JuliusBrussee/caveman` (MIT) | ✅ |
+| `graphify` | pip | `pip: graphifyy` (MIT, self-updating) | ✅ |
 
-Most skills are git-fetched into `~/.claude/skills`; **`graphify`** is a Python package — `/setup` runs `pip install graphifyy` + `graphify install`, which installs it to its own tool-managed location. The registry lives in [`install_skills.py`](install_skills.py) — add/remove entries there.
+- **skills** are git-fetched into `~/.claude/skills/<name>/`.
+- **agents** are Claude Code *subagents* — a single `.md` placed in `~/.claude/agents/<name>.md`, spawned as role-specialized reviewers/builders (useful for multi-agent runs like `/agent-orchestrator`).
+- **graphify** is a Python package — `/setup` runs `pip install --upgrade graphifyy` + `graphify install`.
+- **Bundled in the config repo** (deployed by `deploy.py`, no catalog entry): `setup`, `agent-orchestrator`, `ionic-capacitor` (vendored, MIT — upstream is dormant so the repo copy is the source of truth).
+
+The registry lives in [`install_skills.py`](install_skills.py) — add/remove entries there. All non-official entries are third-party code: review before relying on them.
 
 ## Not handled here
 

@@ -8,7 +8,7 @@ A portable, general-purpose Claude Code setup: a lean router `CLAUDE.md` plus to
 | --- | --- | --- |
 | `CLAUDE.md` | Router — always-on rules + a "when to read what" table | every session |
 | `guidelines/` | Topic rules: coding-standards, workflow, testing, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo | core 3 imported every session; rest on demand |
-| `skills/` | Bundled skill: `setup` (`/setup`) — installs the rest | when triggered |
+| `skills/` | Bundled skills: `setup` (`/setup`, installs the rest), `agent-orchestrator` (multi-agent fix pipeline), `ionic-capacitor` (vendored) | when triggered |
 | `deploy.py` | Copy/symlink everything into `~/.claude` | — |
 | `README.md` | This file — orientation + machine setup | — |
 
@@ -29,16 +29,23 @@ A skill is a folder under `~/.claude/skills/<name>/` with a `SKILL.md` (frontmat
 
 ### Bundled (deployed by `deploy.py`)
 
-- **`setup`** — `/setup`: installs the curated stack skills (see below).
+- **`setup`** — `/setup`: installs the curated stack skills and subagents (see below).
+- **`agent-orchestrator`** — `/agent-orchestrator <path>`: iterative multi-agent review → versioned fix volumes (`vol1.md`…) → hardening rounds → stops at 0 blockers; implements only with explicit `--auto`.
+- **`ionic-capacitor`** — Ionic + Capacitor patterns for Angular/React/Vue mobile apps (vendored, MIT; dormant until an Ionic project triggers it).
 
-### Stack skills — `/setup`
+### Stack skills & subagents — `/setup`
 
-Run **`/setup`** to install the curated skills (re-run to update). Default set:
+Run **`/setup`** to install the curated set (re-run to update). **Lean defaults, broad catalog**: the default set matches the Angular + NestJS + TypeScript stack; everything else is opt-in so each user picks what fits their stack.
 
-- `angular-developer`, `frontend-design`, `webapp-testing`, `typescript-pro`, `nestjs-expert`, `caveman` — fetched fresh from source into `~/.claude/skills`. (`caveman` is the terse-tone skill; it's **on by default every session** via a rule in `CLAUDE.md` — turn off with "stop caveman" / "normal mode".)
-- **`graphify`** (`/graphify`) — installed via `pip install graphifyy` + its own installer (MIT, self-updating). Turns any folder into a knowledge graph (HTML + JSON + `GRAPH_REPORT.md`); for a project with a `graphify-out/` dir, read `graphify-out/GRAPH_REPORT.md` before architecture questions.
+- **Defaults:** `angular-developer`, `frontend-design`, `webapp-testing`, `typescript-pro`, `nestjs-expert`, `caveman`, `graphify`. (`caveman` is the terse-tone skill — **on by default every session** via a rule in `CLAUDE.md`; turn off with "stop caveman" / "normal mode". `graphify` installs via `pip install graphifyy` + its own installer and turns any folder into a queryable knowledge graph.)
+- **Opt-in catalog** (`/setup --list` for the full table): React (`react-expert`, `nextjs-developer`, `react-native-expert`), Vue (`vue-expert`), JS (`javascript-pro`), desktop/mobile (`electron-pro`, `flutter-expert`), quality (`code-reviewer`, `secure-code-guardian`, `playwright-expert`, `code-reviewer-agent`, `security-auditor-agent`), plus `angular-new-app`, `theme-factory`.
+- Entries marked **agent** are Claude Code *subagents* (installed to `~/.claude/agents/`), used as role-specialized reviewers — e.g. by `/agent-orchestrator`.
 
-`/setup --list` shows the full catalog (also `angular-new-app`, `theme-factory`, `code-reviewer`, `secure-code-guardian`); `/setup --all` installs everything.
+```sh
+/setup                                   # defaults
+/setup --only react-expert,vue-expert    # pick your stack
+/setup --all                             # everything
+```
 
 ### MCP servers & plugins (not folder-skills — install manually)
 
@@ -54,8 +61,8 @@ Run **`/setup`** to install the curated skills (re-run to update). Default set:
 
 ## New-machine checklist
 
-- [ ] `python deploy.py` — installs `CLAUDE.md` + `README.md` + `guidelines/` + bundled `skills/setup` into `~/.claude/`
-- [ ] `/setup` — installs the stack skills (angular-developer, frontend-design, webapp-testing, typescript-pro, nestjs-expert, caveman, graphify)
+- [ ] `python deploy.py` — installs `CLAUDE.md` + `README.md` + `guidelines/` + bundled skills (`setup`, `agent-orchestrator`, `ionic-capacitor`) into `~/.claude/`
+- [ ] `/setup` — installs the default stack set; `/setup --list` to pick extras for your stack (React, Vue, Electron, …)
 - [ ] Add MCP + plugins manually: Context7, Playwright, TypeScript LSP
 - [ ] Set model/theme via `/config`; add a permissions allowlist
 - [ ] Confirm git identity (`git config --global user.name/.email`) and SSH keys exist

@@ -1,0 +1,41 @@
+{
+  "skill_name": "ionic-capacitor",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I'm building a fitness tracker app with Ionic React and Capacitor. I need a home page that shows today's step count with a circular progress ring, a list of recent activities (walking, running, cycling) with sliding delete, and pull-to-refresh to sync with the health API. Also need a bottom tab bar with Home, Activity, and Profile tabs. The app should look native on both iOS and Android.",
+      "expected_output": "A complete Ionic React page component using IonPage, IonContent, IonTabs with tab routing, IonList with IonItemSliding for activities, IonRefresher for pull-to-refresh, proper lifecycle hooks (useIonViewWillEnter for data loading), and platform-adaptive styling. Should include skeleton loading states and proper TypeScript types.",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "I need to add camera photo capture to my Ionic Angular app. Users should be able to take a photo or pick from gallery, preview it, and upload it. The app also needs to store the last 10 photos in local storage using Capacitor Preferences. Set up the whole thing with standalone components and signals.",
+      "expected_output": "An Angular standalone component using Capacitor Camera plugin with proper permissions handling, a signal-based service for photo management, Capacitor Preferences for persistence, proper error handling with IonToast, and a gallery view using IonGrid. Should use addIcons for ionicons and OnPush change detection.",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "I want to create a task management app with Ionic Vue using Pinia for state management. Need a main page with tasks grouped by category using ion-accordion, the ability to create new tasks via a sheet modal, dark mode toggle that persists, and proper form validation. Use the Composition API throughout.",
+      "expected_output": "A Vue 3 Composition API setup with Pinia store for tasks, ion-accordion-group for categories, modalController for sheet modal creation form, VeeValidate or custom validation, dark mode toggle using ion-palette-dark class with Capacitor Preferences persistence, proper onIonViewWillEnter lifecycle usage, and defineProps/defineEmits for child components.",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "Build a notification & styling demo app with Ionic React. I need a page that lets users schedule local notifications with a title, body, and delay time using @capacitor/local-notifications. Add a confirmation dialog using @capacitor/dialog before scheduling. Style the page using Ionic CSS utility classes (ion-padding, ion-text-center, ion-margin-top). Customize the IonButton and IonCard appearance using CSS Shadow Parts (::part) and CSS custom properties. Include proper error handling for the native API calls with try/catch that distinguishes user errors from system errors. Use IonPage wrapper and TypeScript throughout.",
+      "expected_output": "A React component using IonPage, @capacitor/local-notifications for scheduling with requestPermissions, @capacitor/dialog for confirmation before scheduling, CSS utility classes (ion-padding, ion-text-center, etc.), CSS Shadow Parts (::part) or CSS custom properties for component customization, try/catch error handling around native plugin calls, and TypeScript types/interfaces.",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "Create a location explorer app with Ionic Angular using standalone components. The app should show a list of saved locations with their coordinates. Include a button to get the current location using @capacitor/geolocation. Show a native toast using @capacitor/toast or IonToast when a location is saved. Use @capacitor/network to check connectivity before saving — if offline, show a warning. Add a platform check using Capacitor.isNativePlatform() to provide a web fallback for geolocation. Use Angular signals for state management and addIcons for ionicon registration. Include proper error handling with try/catch for all native API calls.",
+      "expected_output": "An Angular standalone component with @capacitor/geolocation for position, @capacitor/toast or IonToast for feedback, @capacitor/network for connectivity checking, Capacitor.isNativePlatform() platform check with web fallback, Angular signals for reactive state, addIcons registration for ionicons, and try/catch error handling around all native plugin calls.",
+      "files": []
+    },
+    {
+      "id": 6,
+      "prompt": "Build a notes app with offline support using Ionic Vue. Notes should be stored locally using @capacitor/filesystem (write/read JSON files to the Data directory). Add an action sheet using @capacitor/action-sheet or IonActionSheet for note actions (edit, delete, share). Use Ionic CSS utility classes for layout (ion-padding, ion-margin, ion-text-center). Include proper error handling with try/catch for filesystem operations. Use Pinia for state management and the Composition API throughout. Add an IonSearchbar to filter notes by title. Each note should display in an IonCard.",
+      "expected_output": "A Vue 3 Composition API setup with Pinia store, @capacitor/filesystem for reading/writing note data to Directory.Data, @capacitor/action-sheet or IonActionSheet for note actions, CSS utility classes (ion-padding, ion-margin, etc.), try/catch error handling for filesystem operations, IonSearchbar for filtering, and IonCard for note display.",
+      "files": []
+    }
+  ]
+}
