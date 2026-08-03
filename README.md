@@ -7,8 +7,8 @@ A portable, general-purpose Claude Code setup: a lean router `CLAUDE.md` plus to
 | Path | What | Loaded |
 | --- | --- | --- |
 | `CLAUDE.md` | Router — always-on rules + a "when to read what" table | every session |
-| `guidelines/` | Topic rules: coding-standards, workflow, testing, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo | core 3 imported every session; rest on demand |
-| `skills/` | Bundled skills: `setup` (`/setup`, installs the rest), `agent-orchestrator` (multi-agent fix pipeline), `ionic-capacitor` (vendored) | when triggered |
+| `guidelines/` | Topic rules: coding-standards, workflow, testing, subagent-orchestration, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo | core 3 imported every session; rest on demand |
+| `skills/` | Bundled: `setup` (`/setup`, installs the rest), the `*-team` multi-agent skills, `ionic-capacitor` (vendored) | when triggered |
 | `deploy.py` | Copy/symlink everything into `~/.claude` | — |
 | `README.md` | This file — orientation + machine setup | — |
 
@@ -30,7 +30,9 @@ A skill is a folder under `~/.claude/skills/<name>/` with a `SKILL.md` (frontmat
 ### Bundled (deployed by `deploy.py`)
 
 - **`setup`** — `/setup`: installs the curated stack skills and subagents (see below).
-- **`agent-orchestrator`** — `/agent-orchestrator <path>`: iterative multi-agent review → versioned fix volumes (`vol1.md`…) → hardening rounds → stops at 0 blockers; implements only with explicit `--auto`.
+- **`*-team` multi-agent skills** — fan out scoped subagents, adversarially verify, and (for mutating ones) apply only on opt-in. Shared mechanics in [`guidelines/subagent-orchestration.md`](guidelines/subagent-orchestration.md):
+  - `/feature-team` — **conductor**: architect → plan (human gate) → build → check → cover, chaining the teams below.
+  - `/analyze-team` (map architecture, read-only) · `/review-team` (correctness + reuse/simplify) · `/security-team` (audit) · `/implement-team` (parallel build) · `/test-team` (write missing tests) · `/refactor-team` (behaviour-preserving cleanup).
 - **`ionic-capacitor`** — Ionic + Capacitor patterns for Angular/React/Vue mobile apps (vendored, MIT; dormant until an Ionic project triggers it).
 
 ### Stack skills & subagents — `/setup`
@@ -39,7 +41,7 @@ Run **`/setup`** to install the curated set (re-run to update). **Lean defaults,
 
 - **Defaults:** `angular-developer`, `frontend-design`, `webapp-testing`, `typescript-pro`, `nestjs-expert`, `caveman`, `graphify`. (`caveman` is the terse-tone skill — **on by default every session** via a rule in `CLAUDE.md`; turn off with "stop caveman" / "normal mode". `graphify` installs via `pip install graphifyy` + its own installer and turns any folder into a queryable knowledge graph.)
 - **Opt-in catalog** (`/setup --list` for the full table): React (`react-expert`, `nextjs-developer`, `react-native-expert`), Vue (`vue-expert`), JS (`javascript-pro`), desktop/mobile (`electron-pro`, `flutter-expert`), quality (`code-reviewer`, `secure-code-guardian`, `playwright-expert`, `code-reviewer-agent`, `security-auditor-agent`), plus `angular-new-app`, `theme-factory`.
-- Entries marked **agent** are Claude Code *subagents* (installed to `~/.claude/agents/`), used as role-specialized reviewers — e.g. by `/agent-orchestrator`.
+- Entries marked **agent** are Claude Code *subagents* (installed to `~/.claude/agents/`), used as role-specialized reviewers — e.g. by the `*-team` skills.
 
 ```sh
 /setup                                   # defaults
@@ -61,7 +63,7 @@ Run **`/setup`** to install the curated set (re-run to update). **Lean defaults,
 
 ## New-machine checklist
 
-- [ ] `python deploy.py` — installs `CLAUDE.md` + `README.md` + `guidelines/` + bundled skills (`setup`, `agent-orchestrator`, `ionic-capacitor`) into `~/.claude/`
+- [ ] `python deploy.py` — installs `CLAUDE.md` + `README.md` + `guidelines/` + bundled skills (`setup`, the `*-team` skills, `ionic-capacitor`) into `~/.claude/`
 - [ ] `/setup` — installs the default stack set; `/setup --list` to pick extras for your stack (React, Vue, Electron, …)
 - [ ] Add MCP + plugins manually: Context7, Playwright, TypeScript LSP
 - [ ] Set model/theme via `/config`; add a permissions allowlist

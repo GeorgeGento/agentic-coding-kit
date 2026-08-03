@@ -29,6 +29,7 @@ Imported into every session because they apply to nearly every task — treat as
 | Node / NestJS / API / MongoDB | [`guidelines/backend-nodejs.md`](guidelines/backend-nodejs.md) |
 | UI/UX, components, accessibility, SEO | [`guidelines/ux-ui-seo.md`](guidelines/ux-ui-seo.md) |
 | React / Vue / Ionic / Electron / other frameworks | No guideline file — use the matching skill (install via `/setup`, see `/setup --list`); the project's own `CLAUDE.md` carries project conventions |
+| Spawning subagents / running a `*-team` multi-agent skill | [`guidelines/subagent-orchestration.md`](guidelines/subagent-orchestration.md) |
 
 > The table is the **router** for the on-demand files. If a task spans several rows, read each relevant file before editing. Reading guideline files is non-destructive discovery — never ask permission to read them.
 

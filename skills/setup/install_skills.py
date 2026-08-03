@@ -149,7 +149,7 @@ def print_catalog() -> None:
                 print(f"    {mark} {name:24} {kind:5}  {_source(meta):36} {meta['trust']}")
         print()
     print("Bundled in the config repo (installed by deploy.py, not listed above):")
-    print("      setup, agent-orchestrator, ionic-capacitor")
+    print("      setup, ionic-capacitor, and the *-team multi-agent skills")
 
 
 def install_git_item(name: str, meta: dict, target_dir: Path, dry: bool) -> bool:
