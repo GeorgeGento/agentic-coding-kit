@@ -1,0 +1,9 @@
+# Tier -> model mapping for opencode (`python deploy.py --tool opencode`).
+# opencode model ids are `provider/model-id`. Empty string = inherit the
+# session's model. Swap in other providers (openai/..., ollama/...) per tier.
+
+[models]
+lead = "anthropic/claude-opus-5-5"
+senior = "anthropic/claude-opus-5-5"
+mid = "anthropic/claude-sonnet-5-5"
+junior = "anthropic/claude-haiku-4-5-20251001"

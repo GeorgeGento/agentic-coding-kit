@@ -1,0 +1,10 @@
+# Tier -> model mapping for Codex (`python deploy.py --tool codex`).
+# Empty string = the agent inherits the session's model. Fill in the OpenAI
+# model ids you want per tier (strong reasoning model for lead/senior, a
+# faster/cheaper one for mid/junior).
+
+[models]
+lead = ""
+senior = ""
+mid = ""
+junior = ""

@@ -1,6 +1,6 @@
-# Subagent Orchestration
+# Team Mechanics
 
-How we spawn and coordinate subagent **teams**. The `*-team` skills (`review-team`, `security-team`, `analyze-team`, `implement-team`, `test-team`, `refactor-team`) all follow these mechanics; each skill only adds its scenario-specific finder lenses and output. Read this before running or authoring one.
+How we spawn and coordinate subagent **teams**. Every [task type](task-types.md) (feature, analyze, review, security, implement, test, refactor) follows these mechanics; each type only adds its scenario-specific lenses and output. Who owns and audits what is defined by the [hierarchy](hierarchy.md). Read this before running a multi-agent task.
 
 ## When to spawn a team
 
@@ -24,7 +24,7 @@ Persist to `findings.json` as each stage completes; never depend on an agent's r
 
 ## Model
 
-Sonnet is the default (fast, cheap, strong at focused work). `--model sonnet|opus|haiku` is configurable: opus for the hardest verification/synthesis, haiku for mechanical sweeps. Pass `model:` on every spawn; don't mix models within a stage unless asked.
+Pick agents by **tier**, not model name: spawn `senior | mid | junior` (see [hierarchy](hierarchy.md)); the profile maps each tier to a model. Default finders/verifiers to `mid`; `senior` for the hardest verification/synthesis, `junior` for mechanical sweeps. `--model` overrides with a tier or a harness model id.
 
 ## Scoped briefs (the orchestrator's job)
 
@@ -70,12 +70,12 @@ Prefer the Workflow tool when available: pass the findings schema as its `schema
 
 ## Implementing (mutation) — opt-in only
 
-Producing a plan is always safe. **Applying** changes mutates code — never do it without explicit opt-in (`--auto`, "implement it", "don't ask me"). When applying: order by `depends_on`, isolate independent changes in worktrees and merge, run the project's lint/build/tests after each logical group, fix regressions the tests catch, and summarize. (Per the [workflow](workflow.md) guideline: plan → confirm → implement.)
+Producing a plan is always safe. **Applying** changes mutates code — never do it without explicit opt-in (`--auto`, "implement it", "don't ask me"). When applying: order by `depends_on`, isolate independent changes in worktrees and merge, run the project's lint/build/tests after each logical group, fix regressions the tests catch, and summarize. (Per the [workflow](../guidelines/workflow.md) guideline: plan → confirm → implement.)
 
 ## Composing teams
 
-Teams chain. The canonical composition is feature delivery (`feature-team`): **architect** (`analyze-team`) → **plan + human gate** → **build** (`implement-team`) → **check** (`review-team` + `security-team`, in parallel) → **cover** (`test-team`). Shared `.team/` state carries context across phases — the architecture map feeds the plan, the plan feeds the build, the diff feeds review/security/test. A conductor skill *delegates* to each team rather than reimplementing it. Always keep the **plan gate**: stop for approval before the build phase unless the user explicitly opted into unattended end-to-end.
+Teams chain. The canonical composition is feature delivery (the *feature* task type): **architect** (*analyze*) → **plan + human gate** → **build** (*implement*) → **check** (*review* + *security*, in parallel) → **cover** (*test*). Shared `.team/` state carries context across phases — the architecture map feeds the plan, the plan feeds the build, the diff feeds review/security/test. The owner of a composed task *delegates* each phase rather than doing it inline. Always keep the **plan gate**: stop for approval before the build phase unless the user explicitly opted into unattended end-to-end.
 
 ## Common flags
 
-`--agents N` · `--model sonnet|opus|haiku` · `--verify all|blockers|none` · `--focus "..."` · `--auto` (mutating skills only). Defaults: **5 agents, sonnet, verify all, no auto**.
+`--agents N` · `--model senior|mid|junior` · `--verify all|blockers|none` · `--focus "..."` · `--auto` (mutating skills only). Defaults: **5 agents, mid, verify all, no auto**.

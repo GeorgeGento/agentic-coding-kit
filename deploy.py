@@ -1,44 +1,231 @@
 #!/usr/bin/env python3
-"""Deploy this Claude Code config repo into ~/.claude.
+"""Deploy agent-workflows into an AI coding agent's config directory.
 
-Copies (or symlinks) CLAUDE.md, README.md, guidelines/, and skills/ from
-this repo into the user's Claude config directory. Anything it would overwrite
-is backed up to a timestamped sibling first. Cross-platform: Windows, macOS, Linux.
+Renders core/ (rules, guidelines, roles, protocols, skills) for one harness:
+
+  claude-code -> ~/.claude : CLAUDE.md (@imports), agents/<tier>.md, skills/,
+                             a PreToolUse hook routing heavy commands to the queue
+  codex       -> ~/.codex  : AGENTS.md (always-loaded files inlined),
+                             agents/<tier>.toml, skills in ~/.agents/skills
+  opencode    -> ~/.config/opencode : AGENTS.md (inlined), agents/<tier>.md,
+                             skills/, a plugin routing heavy bash commands to the queue
+
+Tier models come from profiles/<name>.toml. The heavy-command queue
+(core/bin/heavy.py) is shared by all harnesses at ~/.agent-workflows/bin/.
+Anything overwritten is backed up to <target>/.deploy-backups/ first.
 
 Usage:
-    python deploy.py                 # copy into ~/.claude (backs up overwrites)
-    python deploy.py --dry-run       # show what would happen, change nothing
-    python deploy.py --link          # symlink instead of copy (edits stay live)
-    python deploy.py --target PATH   # deploy somewhere other than ~/.claude
+    python deploy.py                          # claude-code, profile "claude"
+    python deploy.py --tool codex             # codex, profile "openai"
+    python deploy.py --tool opencode          # opencode, profile "opencode"
+    python deploy.py --profile local          # pick another tier->model profile
+    python deploy.py --dry-run                # show what would happen, change nothing
+    python deploy.py --link                   # symlink copied dirs (edits stay live)
+    python deploy.py --target PATH            # deploy somewhere other than the default
+    python deploy.py --no-hook                # don't install the queue hook/plugin
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import re
 import shutil
+import sys
+import tomllib
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent
+CORE = REPO_ROOT / "core"
+ADAPTERS = REPO_ROOT / "adapters"
+PROFILES_DIR = REPO_ROOT / "profiles"
+RULES_FILE = CORE / "rules.md"
+HIERARCHY_PROTOCOL = CORE / "protocols" / "hierarchy.md"
+HEAVY_SCRIPT = CORE / "bin" / "heavy.py"
 
-# Single files copied to <target>/<name>.
-FILES = ("CLAUDE.md", "README.md")
-# Directories the repo fully owns -> replaced wholesale at <target>/<name>.
-OWNED_DIRS = ("guidelines",)
-# Directories merged child-by-child so sibling content survives (e.g. other skills).
-MERGE_DIRS = ("skills",)
+# core/ dirs the repo fully owns -> replaced wholesale at <target>/<name>.
+OWNED_DIRS = ("guidelines", "roles", "protocols")
+# Files the instructions file loads every session (paths relative to <target>).
+ALWAYS_LOADED = (
+    "guidelines/coding-standards.md",
+    "guidelines/workflow.md",
+    "guidelines/testing.md",
+    "guidelines/performance.md",
+    "roles/lead.md",
+)
+ALWAYS_LOADED_MARKER = "{{ALWAYS_LOADED}}"
+# The Lead is the main session, not a subagent; it is loaded via the instructions file.
+MAIN_SESSION_ROLE = "lead"
+# Skills folded into protocols/task-types.md; removed (backed up) from old deploys.
+RETIRED_SKILLS = ("analyze-team", "feature-team", "implement-team", "refactor-team",
+                  "review-team", "security-team", "test-team")
+# Shared, harness-neutral home for the heavy queue (script + lock files).
+SHARED_DIRNAME = ".agent-workflows"
+HOOK_MATCHER = "Bash|PowerShell"
+OPENCODE_PLUGIN = ADAPTERS / "opencode" / "plugins" / "heavy-queue.js"
+HOOK_ID = "heavy.py\" hook"  # identifies our hook entry inside settings.json
+RELATIVE_LINK = re.compile(r"\]\((guidelines|protocols|roles)/")
+
+
+@dataclass(frozen=True)
+class Tool:
+    """How one harness consumes the rendered config."""
+    name: str
+    default_target: Path
+    default_profile: str
+    instructions_file: str
+    agent_format: str  # "claude" | "codex" | "opencode"
+    inline_always_loaded: bool  # False -> @import lines (Claude Code)
+    hook: str | None  # how the heavy queue is wired in: "settings" | "plugin" | None
+    home_depth: int = 1  # how many levels above the target the user's home is
+
+    @property
+    def agent_ext(self) -> str:
+        return ".toml" if self.agent_format == "codex" else ".md"
+
+    def home(self, target: Path) -> Path:
+        """The home dir implied by target, so --target sandboxes everything (tests, dry runs)."""
+        return target.parents[self.home_depth - 1]
+
+    def skills_dir(self, target: Path) -> Path:
+        # Codex reads user skills from ~/.agents/skills, not from inside ~/.codex.
+        return self.home(target) / ".agents" / "skills" if self.name == "codex" else target / "skills"
+
+
+TOOLS = {
+    "claude-code": Tool("claude-code", Path.home() / ".claude", "claude", "CLAUDE.md",
+                        "claude", inline_always_loaded=False, hook="settings"),
+    "codex": Tool("codex", Path.home() / ".codex", "openai", "AGENTS.md",
+                  "codex", inline_always_loaded=True, hook=None),
+    "opencode": Tool("opencode", Path.home() / ".config" / "opencode", "opencode", "AGENTS.md",
+                     "opencode", inline_always_loaded=True, hook="plugin", home_depth=2),
+}
 
 
 def _stamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
 
 
+def load_profile(name: str) -> dict[str, str]:
+    """Return the tier -> model mapping from profiles/<name>.toml ("" = inherit)."""
+    with open(PROFILES_DIR / f"{name}.toml", "rb") as fh:
+        return tomllib.load(fh)["models"]
+
+
+def split_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Split a '---'-delimited frontmatter block (simple `key: value` lines) from the body."""
+    _, front, body = text.split("---", 2)
+    meta = dict(line.split(":", 1) for line in front.strip().splitlines())
+    return {k.strip(): v.strip() for k, v in meta.items()}, body.strip()
+
+
+def absolutize_links(text: str, root: Path) -> str:
+    """Point relative guideline/protocol/role links at the deployed copies.
+
+    The model reads these paths from the project's working directory, where a
+    relative `guidelines/x.md` would not resolve.
+    """
+    text = RELATIVE_LINK.sub(lambda m: f"]({root.as_posix()}/{m.group(1)}/", text)
+    return text.replace("](README.md)", f"]({root.as_posix()}/README.md)")
+
+
+def render_instructions(tool: Tool, rules: str, target: Path) -> str:
+    """Render core/rules.md as the harness's global instructions file.
+
+    Example:
+        render_instructions(TOOLS["codex"], RULES_FILE.read_text(), Path("~/.codex"))
+    """
+    if tool.inline_always_loaded:
+        parts = []
+        for rel in ALWAYS_LOADED:
+            text = (CORE / rel).read_text(encoding="utf-8")
+            if text.startswith("---"):
+                text = split_frontmatter(text)[1]
+            parts.append(f"<!-- {rel} -->\n\n{text.strip()}")
+        loaded = "\n\n".join(parts)
+    else:
+        loaded = "\n".join(f"@{rel}" for rel in ALWAYS_LOADED)
+    return absolutize_links(rules.replace(ALWAYS_LOADED_MARKER, loaded), target)
+
+
+def render_agent(tool: Tool, role_text: str, model: str, protocol_text: str,
+                 target: Path) -> str:
+    """Render a role file as a subagent definition for the given harness.
+
+    The protocol is inlined so each agent is self-contained: a subagent starts
+    with no context beyond its definition and the brief it is handed.
+
+    Example:
+        render_agent(TOOLS["claude-code"], Path("core/roles/mid.md").read_text(),
+                     "claude-sonnet-5-5", HIERARCHY_PROTOCOL.read_text(), Path("~/.claude"))
+    """
+    meta, body = split_frontmatter(role_text)
+    instructions = absolutize_links(
+        f"{body}\n\n"
+        f"Coding, testing, performance and other guidelines live in `{target.as_posix()}/guidelines/` "
+        "— read the ones the brief or the task touches (performance.md always).\n\n"
+        f"{protocol_text.strip()}\n",
+        target,
+    )
+    if tool.agent_format == "codex":
+        # Literal multi-line string: no escaping needed as long as ''' never appears.
+        if "'''" in instructions:
+            raise ValueError(f"role {meta['name']} contains ''' and can't be rendered to TOML")
+        model_line = f"model = {json.dumps(model)}\n" if model else ""
+        return (f"name = {json.dumps(meta['name'])}\n"
+                f"description = {json.dumps(meta['description'])}\n"
+                f"{model_line}developer_instructions = '''\n{instructions}'''\n")
+    if tool.agent_format == "opencode":
+        # opencode names the agent after the file; `mode: subagent` keeps it out of the main picker.
+        model_line = f"model: {model}\n" if model else ""
+        return (f"---\ndescription: {meta['description']}\nmode: subagent\n{model_line}---\n\n"
+                f"{instructions}")
+    front = "\n".join(f"{k}: {v}" for k, v in meta.items())
+    return f"---\n{front}\nmodel: {model or 'inherit'}\n---\n\n{instructions}"
+
+
+def hook_command(heavy_path: Path) -> str:
+    return f'"{Path(sys.executable).as_posix()}" "{heavy_path.as_posix()}" hook'
+
+
+def render_opencode_plugin(template: str, heavy_path: Path) -> str:
+    """Fill the opencode queue plugin with this machine's python and heavy.py paths."""
+    return (template.replace("__PYTHON__", json.dumps(Path(sys.executable).as_posix()))
+                    .replace("__HEAVY__", json.dumps(heavy_path.as_posix())))
+
+
+def merge_hook(settings: dict, command: str) -> dict:
+    """Return settings with our PreToolUse queue hook added or refreshed (idempotent).
+
+    Other hooks and keys are preserved; the input is not mutated.
+
+    Example:
+        merge_hook({}, '"python" "/h/.agent-workflows/bin/heavy.py" hook')
+    """
+    merged = json.loads(json.dumps(settings))
+    pre = merged.setdefault("hooks", {}).setdefault("PreToolUse", [])
+    for entry in pre:
+        for hook in entry.get("hooks", []):
+            if HOOK_ID in hook.get("command", ""):
+                hook["command"] = command
+                return merged
+    pre.append({"matcher": HOOK_MATCHER, "hooks": [{"type": "command", "command": command}]})
+    return merged
+
+
 class Deployer:
-    def __init__(self, target: Path, *, link: bool, dry_run: bool, stamp: str) -> None:
+    def __init__(self, tool: Tool, target: Path, *, profile: str, link: bool,
+                 dry_run: bool, hook: bool, stamp: str) -> None:
+        self.tool = tool
         self.target = target
+        self.profile = profile
         self.link = link
         self.dry = dry_run
+        self.hook = hook
         self.stamp = stamp
+        self.shared = tool.home(target) / SHARED_DIRNAME
         self.steps = 0
 
     def log(self, msg: str) -> None:
@@ -79,53 +266,135 @@ class Deployer:
             shutil.copy2(src, dest)
         self.log(f"copy    {src}  ->  {dest}")
 
-    def deploy_item(self, name: str, *, merge: bool = False) -> None:
-        src = REPO_ROOT / name
-        if not src.exists():
-            self.log(f"! skip {name} (not found in repo)")
-            return
-        if merge and src.is_dir():
-            if not self.dry:
-                (self.target / name).mkdir(parents=True, exist_ok=True)
-            for child in sorted(src.iterdir()):
-                dest = self.target / name / child.name
-                self._backup(dest)
-                self._place(child, dest)
-        else:
+    def _write(self, dest: Path, content: str) -> None:
+        """Back up dest, then write generated content (never symlinked)."""
+        self._backup(dest)
+        if not self.dry:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            dest.write_text(content, encoding="utf-8")
+        self.log(f"render  {dest}")
+
+    def deploy_owned(self) -> None:
+        for name in OWNED_DIRS:
             dest = self.target / name
             self._backup(dest)
-            self._place(src, dest)
+            self._place(CORE / name, dest)
+        self._backup(self.target / "README.md")
+        self._place(REPO_ROOT / "README.md", self.target / "README.md")
+
+    def deploy_instructions(self) -> None:
+        rules = RULES_FILE.read_text(encoding="utf-8")
+        self._write(self.target / self.tool.instructions_file,
+                    render_instructions(self.tool, rules, self.target))
+
+    def deploy_agents(self, models: dict[str, str]) -> None:
+        protocol = HIERARCHY_PROTOCOL.read_text(encoding="utf-8")
+        for role_path in sorted((CORE / "roles").glob("*.md")):
+            tier = role_path.stem
+            if tier == MAIN_SESSION_ROLE:
+                continue
+            content = render_agent(self.tool, role_path.read_text(encoding="utf-8"),
+                                   models.get(tier, ""), protocol, self.target)
+            self._write(self.target / "agents" / f"{tier}{self.tool.agent_ext}", content)
+
+    def deploy_skills(self) -> None:
+        """Merge skills child-by-child so sibling (user-installed) skills survive."""
+        skills_dir = self.tool.skills_dir(self.target)
+        sources = [CORE / "skills", ADAPTERS / self.tool.name / "skills"]
+        for src_dir in (s for s in sources if s.is_dir()):
+            for child in sorted(src_dir.iterdir()):
+                dest = skills_dir / child.name
+                self._backup(dest)
+                self._place(child, dest)
+        for name in RETIRED_SKILLS:
+            if (skills_dir / name).exists():
+                self.log(f"retire  {name} (folded into protocols/task-types.md)")
+                self._backup(skills_dir / name)
+
+    def deploy_heavy(self) -> None:
+        dest = self.shared / "bin" / "heavy.py"
+        self._backup(dest)
+        self._place(HEAVY_SCRIPT, dest)
+
+    def deploy_plugin(self) -> None:
+        content = render_opencode_plugin(OPENCODE_PLUGIN.read_text(encoding="utf-8"),
+                                         self.shared / "bin" / "heavy.py")
+        self._write(self.target / "plugins" / OPENCODE_PLUGIN.name, content)
+
+    def deploy_hook(self) -> None:
+        settings_path = self.target / "settings.json"
+        settings = {}
+        if settings_path.exists():
+            try:
+                settings = json.loads(settings_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                self.log(f"! {settings_path} is not valid JSON ({exc}); queue hook NOT installed")
+                return
+        merged = merge_hook(settings, hook_command(self.shared / "bin" / "heavy.py"))
+        if merged == settings:
+            self.log(f"ok      {settings_path} (queue hook already present)")
+            return
+        if settings_path.exists() and not self.dry:
+            bak_dir = self.target / ".deploy-backups"
+            bak_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(settings_path, bak_dir / f"settings.json.bak-{self.stamp}")
+        self._write_settings(settings_path, merged)
+
+    def _write_settings(self, path: Path, settings: dict) -> None:
+        if not self.dry:
+            path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
+        self.log(f"hook    {path} (PreToolUse {HOOK_MATCHER} -> heavy queue)")
 
     def run(self) -> None:
-        self.log(f"target: {self.target}")
-        self.log(f"mode:   {'symlink' if self.link else 'copy'}")
-        for name in FILES:
-            self.deploy_item(name)
-        for name in OWNED_DIRS:
-            self.deploy_item(name)
-        for name in MERGE_DIRS:
-            self.deploy_item(name, merge=True)
+        models = load_profile(self.profile)
+        self.log(f"tool:    {self.tool.name}")
+        self.log(f"target:  {self.target}")
+        self.log(f"profile: {self.profile}")
+        self.log(f"mode:    {'symlink' if self.link else 'copy'}")
+        self.deploy_owned()
+        self.deploy_instructions()
+        self.deploy_agents(models)
+        self.deploy_skills()
+        self.deploy_heavy()
+        if self.hook and self.tool.hook == "settings":
+            self.deploy_hook()
+        elif self.hook and self.tool.hook == "plugin":
+            self.deploy_plugin()
         print()
         print(f"Done ({self.steps} step(s)).")
+        lead = models.get(MAIN_SESSION_ROLE) or "(your choice)"
+        where = {"claude-code": "/config or settings.json \"model\"",
+                 "codex": "\"model\" in ~/.codex/config.toml",
+                 "opencode": "\"model\" in ~/.config/opencode/opencode.json"}[self.tool.name]
+        print(f"Reminder: set the Lead (main session) model to {lead} via {where}.")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Deploy this Claude Code config into ~/.claude.")
-    parser.add_argument("--target", type=Path, default=Path.home() / ".claude",
-                        help="destination dir (default: ~/.claude)")
-    parser.add_argument("--link", action="store_true",
-                        help="symlink instead of copy (live edits)")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="show actions without changing anything")
+    parser = argparse.ArgumentParser(description="Deploy agent-workflows into a harness config dir.")
+    parser.add_argument("--tool", choices=sorted(TOOLS), default="claude-code",
+                        help="target harness (default: claude-code)")
+    parser.add_argument("--profile", help="tier->model profile in profiles/<name>.toml "
+                                          "(default: claude / openai / opencode per tool)")
+    parser.add_argument("--target", type=Path,
+                        help="destination dir (default: ~/.claude, ~/.codex or ~/.config/opencode)")
+    parser.add_argument("--link", action="store_true", help="symlink copied dirs (live edits)")
+    parser.add_argument("--dry-run", action="store_true", help="show actions without changing anything")
+    parser.add_argument("--no-hook", action="store_true",
+                        help="don't install the heavy-queue hook (claude-code) / plugin (opencode)")
     args = parser.parse_args()
 
-    target = args.target.expanduser().resolve()
-    if target == REPO_ROOT:
+    tool = TOOLS[args.tool]
+    profile = args.profile or tool.default_profile
+    target = (args.target or tool.default_target).expanduser().resolve()
+    if target == REPO_ROOT or REPO_ROOT in target.parents:
         print("Refusing to deploy into the repo itself.")
         return 1
+    if not (PROFILES_DIR / f"{profile}.toml").is_file():
+        print(f"Unknown profile '{profile}' (no profiles/{profile}.toml).")
+        return 1
 
-    Deployer(target, link=args.link, dry_run=args.dry_run, stamp=_stamp()).run()
+    Deployer(tool, target, profile=profile, link=args.link, dry_run=args.dry_run,
+             hook=not args.no_hook, stamp=_stamp()).run()
     return 0
 
 

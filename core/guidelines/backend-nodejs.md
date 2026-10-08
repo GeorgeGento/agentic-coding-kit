@@ -19,6 +19,7 @@ Read for backend / API work. Targets **Node.js 24.x LTS**, **NestJS latest stabl
 ## Validation (every boundary)
 
 - Validate `body`, `params`, and `query` at every endpoint, and reject unknown fields. Pick **one** schema library per project and be consistent.
+- **Choosing the library:** if the project already uses a schema library (e.g. Joi), use that, and don't introduce a second one. If none is in use, **ask the user** before adding one, recommending Zod for the reasons below.
 - **Recommended for TypeScript: Zod** — `z.infer` gives one source of truth for the type *and* the runtime schema, and schemas can be shared frontend↔backend (use `nestjs-zod` for controller integration; `.strict()` / `z.strictObject` to reject unknown fields). **Joi** is an acceptable alternative (mature, rich validators) but has no static type inference, so types drift from schemas. Don't hand-roll `if (!x) throw` when a schema can express the constraint.
 - Return a consistent validation error shape with sanitized issues (no sensitive field values).
 

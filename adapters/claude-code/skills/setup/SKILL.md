@@ -59,9 +59,9 @@ Lean defaults (✅) cover the Angular + NestJS + TypeScript stack; everything el
 | `graphify` | pip | `pip: graphifyy` (MIT, self-updating) | ✅ |
 
 - **skills** are git-fetched into `~/.claude/skills/<name>/`.
-- **agents** are Claude Code *subagents* — a single `.md` placed in `~/.claude/agents/<name>.md`, spawned as role-specialized reviewers/builders (useful for the `*-team` multi-agent skills).
+- **agents** are Claude Code *subagents* — a single `.md` placed in `~/.claude/agents/<name>.md`, spawned as role-specialized reviewers/builders (e.g. as extra reviewers in multi-agent review/security tasks; the hierarchy's own `senior`/`mid`/`junior` agents come from `deploy.py`).
 - **graphify** is a Python package — `/setup` runs `pip install --upgrade graphifyy` + `graphify install`.
-- **Bundled in the config repo** (deployed by `deploy.py`, no catalog entry): `setup`, the `*-team` multi-agent skills, and `ionic-capacitor` (vendored, MIT — upstream is dormant so the repo copy is the source of truth).
+- **Bundled in the config repo** (deployed by `deploy.py`, no catalog entry): `setup`, the `senior`/`mid`/`junior` tier agents, and `ionic-capacitor` (vendored, MIT — upstream is dormant so the repo copy is the source of truth).
 
 The registry lives in [`install_skills.py`](install_skills.py) — add/remove entries there. All non-official entries are third-party code: review before relying on them.
 

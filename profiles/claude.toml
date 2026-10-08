@@ -1,0 +1,11 @@
+# Tier -> model mapping for Claude Code. Copy this file to make another profile
+# (e.g. profiles/local.toml) and deploy with `python deploy.py --profile local`.
+# Values are whatever the harness accepts as a model id/alias.
+
+[models]
+# The Lead is your main session — set it via /config or settings.json "model".
+# deploy.py only prints a reminder for it; it is not rendered as a subagent.
+lead = "claude-opus-5-5"
+senior = "claude-opus-5-5"
+mid = "claude-sonnet-5-5"
+junior = "claude-haiku-4-5-20251001"
