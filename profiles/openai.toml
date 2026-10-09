@@ -1,10 +1,12 @@
 # Tier -> model mapping for Codex (`python deploy.py --tool codex`).
-# Empty string = the agent inherits the session's model. Fill in the OpenAI
-# model ids you want per tier (strong reasoning model for lead/senior, a
-# faster/cheaper one for mid/junior).
+# Uses Sol for lead/senior/mid to balance capability and cost, and the
+# fast/efficient Luna model for junior.
+# Empty string = the agent inherits the session's model.
 
 [models]
-lead = ""
-senior = ""
-mid = ""
-junior = ""
+# The Lead is your main session — set "model" in ~/.codex/config.toml.
+# deploy.py only prints a reminder for it; it is not rendered as a subagent.
+lead = "gpt-6.1-sol"
+senior = "gpt-6.1-sol"
+mid = "gpt-6.1-sol"
+junior = "gpt-6-luna"

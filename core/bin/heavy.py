@@ -20,22 +20,27 @@ Environment:
     AW_HEAVY_CMD       command for `--from-env` (avoids PowerShell 5.1 mangling
                        embedded double quotes when passing args to native exes)
 
-A slot is `<dir>/slot-<i>.lock` held with an OS file lock, so a killed process
-frees its slot automatically.
+A slot is `<dir>/slot-<i>.lock`. On POSIX it is held by a workload supervisor:
+if the calling wrapper is killed, the supervisor stops its descendants before
+freeing the slot. The supervisor is POSIX-only; on Windows the wrapper holds the
+slot itself and the OS file lock frees it when the wrapper exits.
 """
 
 from __future__ import annotations
 
 import base64
+import ctypes
 import json
 import os
 import random
 import re
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import time
+import threading
 from pathlib import Path
 from typing import BinaryIO
 
@@ -57,6 +62,10 @@ DEFAULT_DIR = Path.home() / ".agent-workflows" / "heavy"
 POLL_INTERVAL_SECONDS = 1.0
 POLL_JITTER_SECONDS = 0.25
 NICE_INCREMENT = 10
+CHILD_POLL_SECONDS = 0.05
+TERMINATE_GRACE_SECONDS = 1.0
+EXIT_CANCELLED = 130
+PR_SET_CHILD_SUBREAPER = 36
 EXIT_QUEUE_BUSY = 75
 EXIT_USAGE = 2
 EXIT_SHELL_MISSING = 127
@@ -252,11 +261,14 @@ def _try_acquire(directory: Path, index: int) -> BinaryIO | None:
     return None
 
 
-def acquire_slot(directory: Path, slots: int, max_wait: float) -> tuple[BinaryIO, int] | None:
+def acquire_slot(directory: Path, slots: int, max_wait: float,
+                 cancelled: threading.Event | None = None) -> tuple[BinaryIO, int] | None:
     """Poll for a free slot; return (lock handle, slot index) or None on timeout."""
     deadline = time.monotonic() + max_wait
     announced = False
     while True:
+        if cancelled is not None and cancelled.is_set():
+            return None
         for index in range(slots):
             handle = _try_acquire(directory, index)
             if handle:
@@ -266,7 +278,11 @@ def acquire_slot(directory: Path, slots: int, max_wait: float) -> tuple[BinaryIO
         if not announced:
             print(f"[heavy] waiting for a slot (all {slots} busy)...", file=sys.stderr, flush=True)
             announced = True
-        time.sleep(POLL_INTERVAL_SECONDS + random.uniform(0, POLL_JITTER_SECONDS))
+        delay = POLL_INTERVAL_SECONDS + random.uniform(0, POLL_JITTER_SECONDS)
+        if cancelled is None:
+            time.sleep(delay)
+        else:
+            cancelled.wait(delay)
 
 
 # --- run ----------------------------------------------------------------------
@@ -290,19 +306,90 @@ def _shell_argv(shell: str, command: str) -> list[str]:
     return [shell, "-c", command]
 
 
-def _run_child(shell: str, command: str) -> int:
+def _spawn_controlled(action: str, shell: str, command: str) -> tuple[subprocess.Popen, int]:
+    """Start a helper with a private pipe, leaving command stdin untouched. POSIX only."""
+    read_fd, write_fd = os.pipe()
+    env = dict(os.environ, **{ENV_CMD: command})
+    try:
+        child = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), action, shell, str(read_fd)],
+            env=env, pass_fds=(read_fd,), start_new_session=True)
+        return child, write_fd
+    except BaseException:
+        os.close(write_fd)
+        raise
+    finally:
+        os.close(read_fd)
+
+
+def _finish_posix_group(child: subprocess.Popen) -> None:
+    """Stop remaining descendants, then keep the slot until their group exits."""
+    deadline = time.monotonic() + TERMINATE_GRACE_SECONDS
+    group_alive = True
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        group_alive = False
+    while True:
+        # On Linux the supervisor adopts orphaned descendants. Reap only after
+        # Popen collected its own child, preserving the command's exit code.
+        if child.poll() is not None:
+            try:
+                while os.waitpid(-1, os.WNOHANG)[0]:
+                    pass
+            except ChildProcessError:
+                pass
+        adopted = []
+        if sys.platform.startswith("linux") and child.poll() is not None:
+            # Orphans that called setsid() escape the original process group,
+            # but still become our children after their ancestor is stopped.
+            children_file = Path(f"/proc/{os.getpid()}/task/{os.getpid()}/children")
+            adopted = [int(pid) for pid in children_file.read_text().split()]
+            for pid in adopted:
+                try:
+                    os.kill(pid, signal.SIGKILL if time.monotonic() >= deadline else signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+        if group_alive:
+            try:
+                os.killpg(child.pid, signal.SIGKILL if time.monotonic() >= deadline else 0)
+            except ProcessLookupError:
+                group_alive = False
+        if not group_alive and not adopted:
+            child.wait()
+            return
+        time.sleep(CHILD_POLL_SECONDS)
+
+
+def _run_child(shell: str, command: str, cancelled: threading.Event | None = None,
+               lock: BinaryIO | None = None) -> int:
     env = {k: v for k, v in os.environ.items() if k != ENV_CMD}
     env[ENV_HELD] = "1"
     kwargs: dict = {"env": env}
     if IS_WINDOWS:
         kwargs["creationflags"] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
     else:
-        kwargs["preexec_fn"] = lambda: os.nice(NICE_INCREMENT)
+        if cancelled is None:
+            kwargs["preexec_fn"] = lambda: os.nice(NICE_INCREMENT)
+        if cancelled is not None:
+            kwargs["start_new_session"] = True
+            # The foreground shell also holds the lock if the supervisor is
+            # killed outright. Normal cleanup unlocks only after the tree exits.
+            kwargs["pass_fds"] = (lock.fileno(),) if lock is not None else ()
     try:
+        if cancelled is not None and cancelled.is_set():
+            return EXIT_CANCELLED
         child = subprocess.Popen(_shell_argv(shell, command), **kwargs)
     except FileNotFoundError:
         print(f"[heavy] shell not found: {shell}", file=sys.stderr)
         return EXIT_SHELL_MISSING
+    if cancelled is not None:
+        try:
+            while child.poll() is None and not cancelled.wait(CHILD_POLL_SECONDS):
+                pass
+            return EXIT_CANCELLED if cancelled.is_set() else child.returncode
+        finally:
+            _finish_posix_group(child)
     try:
         return child.wait()
     except KeyboardInterrupt:
@@ -310,23 +397,21 @@ def _run_child(shell: str, command: str) -> int:
         return child.wait()
 
 
-def run_heavy(shell: str, command: str) -> int:
-    """Run `command` in `shell` once a slot is free; return its exit code.
-
-    Returns 75 if no slot frees up within AW_HEAVY_MAX_WAIT seconds. If
-    AW_HEAVY_HELD=1 (nested call) the command runs immediately.
-
-    Example:
-        >>> run_heavy("sh", "exit 3")  # doctest: +SKIP
-        3
-    """
-    if os.environ.get(ENV_HELD) == "1":
-        return _run_child(shell, command)
-    directory = _heavy_dir()
+def _run_owned(shell: str, command: str, cancelled: threading.Event | None = None) -> int:
+    """Acquire and retain the slot: inside the supervisor on POSIX, in-process on Windows."""
     slots = _slot_count()
     max_wait = float(os.environ.get(ENV_MAX_WAIT, DEFAULT_MAX_WAIT_SECONDS))
-    acquired = acquire_slot(directory, slots, max_wait)
+    try:
+        directory = _heavy_dir()
+        acquired = acquire_slot(directory, slots, max_wait, cancelled)
+    except OSError as exc:
+        # E.g. a sandbox (Codex workspace-write) that can't write the lock dir:
+        # running unqueued beats failing every heavy command.
+        print(f"[heavy] queue unavailable ({exc}); running without a slot.", file=sys.stderr)
+        return _run_child(shell, command, cancelled)
     if acquired is None:
+        if cancelled is not None and cancelled.is_set():
+            return EXIT_CANCELLED
         print(
             f"[heavy] queue busy: no slot free after {max_wait:g}s ({slots} slots). "
             "Retry later or use run_in_background.",
@@ -335,14 +420,70 @@ def run_heavy(shell: str, command: str) -> int:
         return EXIT_QUEUE_BUSY
     handle, index = acquired
     info_path = directory / f"slot-{index}.json"
-    info = {"pid": os.getpid(), "command": command, "cwd": os.getcwd(), "started": time.time()}
-    info_path.write_text(json.dumps(info), encoding="utf-8")
     try:
-        return _run_child(shell, command)
+        info = {"pid": os.getpid(), "command": command, "cwd": os.getcwd(), "started": time.time()}
+        info_path.write_text(json.dumps(info), encoding="utf-8")
+        return _run_child(shell, command, cancelled, handle)
     finally:
-        info_path.unlink(missing_ok=True)
-        _unlock(handle)
-        handle.close()
+        try:
+            info_path.unlink(missing_ok=True)
+        finally:
+            try:
+                _unlock(handle)
+            finally:
+                handle.close()
+
+
+def _supervise(shell: str, control: int) -> int:
+    cancelled = threading.Event()
+
+    def watch_parent() -> None:
+        try:
+            while os.read(control, 1):
+                pass
+        finally:
+            os.close(control)
+            cancelled.set()
+
+    threading.Thread(target=watch_parent, daemon=True).start()
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, lambda _signum, _frame: cancelled.set())
+    if sys.platform.startswith("linux"):
+        # PR_SET_CHILD_SUBREAPER makes abandoned grandchildren reapable here,
+        # including on machines whose PID 1 does not reap orphaned processes.
+        libc = ctypes.CDLL(None, use_errno=True)
+        if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "cannot supervise orphaned children")
+    os.nice(NICE_INCREMENT)
+    return _run_owned(shell, os.environ[ENV_CMD], cancelled)
+
+
+def run_heavy(shell: str, command: str) -> int:
+    """Run `command` in `shell` once a slot is free; return its exit code.
+
+    Returns 75 if no slot frees up within AW_HEAVY_MAX_WAIT seconds. If
+    AW_HEAVY_HELD=1 (nested call) the command runs immediately. If the lock
+    dir can't be created or written, it warns and runs the command unqueued.
+
+    Example:
+        >>> run_heavy("sh", "exit 3")  # doctest: +SKIP
+        3
+    """
+    if os.environ.get(ENV_HELD) == "1":
+        return _run_child(shell, command)
+    if IS_WINDOWS:
+        return _run_owned(shell, command)
+    child, control = _spawn_controlled("_supervise", shell, command)
+    try:
+        try:
+            return child.wait()
+        except KeyboardInterrupt:
+            os.close(control)
+            control = None
+            return child.wait()
+    finally:
+        if control is not None:
+            os.close(control)
 
 
 # --- status -------------------------------------------------------------------
@@ -435,6 +576,8 @@ def main(argv: list[str]) -> int:
         print(usage, file=sys.stderr)
         return EXIT_USAGE
     action, rest = argv[0], argv[1:]
+    if action == "_supervise" and len(rest) == 2:
+        return _supervise(rest[0], int(rest[1]))
     if action == "hook":
         return _hook()
     if action == "wrap" and len(rest) == 1:

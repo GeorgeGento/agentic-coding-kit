@@ -6,4 +6,4 @@
 lead = "anthropic/claude-opus-5-5"
 senior = "anthropic/claude-opus-5-5"
 mid = "anthropic/claude-sonnet-5-5"
-junior = "anthropic/claude-haiku-4-5-20251001"
+junior = "anthropic/claude-haiku-5-5"

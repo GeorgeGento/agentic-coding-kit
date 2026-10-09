@@ -6,7 +6,8 @@ Renders core/ (rules, guidelines, roles, protocols, skills) for one harness:
   claude-code -> ~/.claude : CLAUDE.md (@imports), agents/<tier>.md, skills/,
                              a PreToolUse hook routing heavy commands to the queue
   codex       -> ~/.codex  : AGENTS.md (always-loaded files inlined),
-                             agents/<tier>.toml, skills in ~/.agents/skills
+                             agents/<tier>.toml, skills in ~/.agents/skills,
+                             the queue's lock dir made writable in its sandbox (config.toml)
   opencode    -> ~/.config/opencode : AGENTS.md (inlined), agents/<tier>.md,
                              skills/, a plugin routing heavy bash commands to the queue
 
@@ -22,7 +23,7 @@ Usage:
     python deploy.py --dry-run                # show what would happen, change nothing
     python deploy.py --link                   # symlink copied dirs (edits stay live)
     python deploy.py --target PATH            # deploy somewhere other than the default
-    python deploy.py --no-hook                # don't install the queue hook/plugin
+    python deploy.py --no-hook                # don't install the queue hook/plugin/sandbox root
 """
 from __future__ import annotations
 
@@ -59,13 +60,15 @@ ALWAYS_LOADED_MARKER = "{{ALWAYS_LOADED}}"
 # The Lead is the main session, not a subagent; it is loaded via the instructions file.
 MAIN_SESSION_ROLE = "lead"
 # Skills folded into protocols/task-types.md; removed (backed up) from old deploys.
-RETIRED_SKILLS = ("analyze-team", "feature-team", "implement-team", "refactor-team",
-                  "review-team", "security-team", "test-team")
+RETIRED_SKILLS = ("agent-orchestrator", "analyze-team", "feature-team", "implement-team",
+                  "refactor-team", "review-team", "security-team", "test-team")
 # Shared, harness-neutral home for the heavy queue (script + lock files).
 SHARED_DIRNAME = ".agent-workflows"
 HOOK_MATCHER = "Bash|PowerShell"
 OPENCODE_PLUGIN = ADAPTERS / "opencode" / "plugins" / "heavy-queue.js"
 HOOK_ID = "heavy.py\" hook"  # identifies our hook entry inside settings.json
+CODEX_SANDBOX_TABLE = "sandbox_workspace_write"
+CODEX_SANDBOX_HEADER = re.compile(rf"^\[{CODEX_SANDBOX_TABLE}\][ \t]*(#.*)?$", re.MULTILINE)
 RELATIVE_LINK = re.compile(r"\]\((guidelines|protocols|roles)/")
 
 
@@ -78,7 +81,7 @@ class Tool:
     instructions_file: str
     agent_format: str  # "claude" | "codex" | "opencode"
     inline_always_loaded: bool  # False -> @import lines (Claude Code)
-    hook: str | None  # how the heavy queue is wired in: "settings" | "plugin" | None
+    hook: str | None  # how the heavy queue is wired in: "settings" | "plugin" | "sandbox" | None
     home_depth: int = 1  # how many levels above the target the user's home is
 
     @property
@@ -98,7 +101,7 @@ TOOLS = {
     "claude-code": Tool("claude-code", Path.home() / ".claude", "claude", "CLAUDE.md",
                         "claude", inline_always_loaded=False, hook="settings"),
     "codex": Tool("codex", Path.home() / ".codex", "openai", "AGENTS.md",
-                  "codex", inline_always_loaded=True, hook=None),
+                  "codex", inline_always_loaded=True, hook="sandbox"),
     "opencode": Tool("opencode", Path.home() / ".config" / "opencode", "opencode", "AGENTS.md",
                      "opencode", inline_always_loaded=True, hook="plugin", home_depth=2),
 }
@@ -213,6 +216,39 @@ def merge_hook(settings: dict, command: str) -> dict:
                 return merged
     pre.append({"matcher": HOOK_MATCHER, "hooks": [{"type": "command", "command": command}]})
     return merged
+
+
+def add_codex_writable_root(text: str, root: str) -> str | None:
+    """Return config.toml text with `root` in [sandbox_workspace_write].writable_roots.
+
+    Returns the text unchanged if `root` is already listed, or None if the
+    existing writable_roots can't be edited safely as text (left to the user).
+    Raises tomllib.TOMLDecodeError on invalid TOML.
+
+    Example:
+        add_codex_writable_root("", "/h/.agent-workflows/heavy")
+        # -> '[sandbox_workspace_write]\nwritable_roots = ["/h/.agent-workflows/heavy"]\n'
+    """
+    table = tomllib.loads(text).get(CODEX_SANDBOX_TABLE, {})
+    roots = table.get("writable_roots")
+    if isinstance(roots, list) and root in roots:
+        return text
+    if roots is not None:
+        return None
+    entry = f"writable_roots = [{json.dumps(root)}]"
+    header = CODEX_SANDBOX_HEADER.search(text)
+    if header:
+        updated = f"{text[:header.end()]}\n{entry}{text[header.end():]}"
+    else:
+        section = (f"# agent-workflows heavy-command queue: lock files must be writable from the sandbox\n"
+                   f"[{CODEX_SANDBOX_TABLE}]\n{entry}\n")
+        updated = f"{text.rstrip()}\n\n{section}" if text.strip() else section
+    # Text edits can't handle every layout (e.g. the table set via dotted keys).
+    try:
+        ok = root in tomllib.loads(updated)[CODEX_SANDBOX_TABLE]["writable_roots"]
+    except (tomllib.TOMLDecodeError, KeyError, TypeError):
+        ok = False
+    return updated if ok else None
 
 
 class Deployer:
@@ -340,6 +376,34 @@ class Deployer:
             shutil.copy2(settings_path, bak_dir / f"settings.json.bak-{self.stamp}")
         self._write_settings(settings_path, merged)
 
+    def deploy_sandbox_root(self) -> None:
+        """Let Codex's workspace-write sandbox write the queue's lock files."""
+        lock_dir = self.shared / "heavy"
+        config_path = self.target / "config.toml"
+        text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+        try:
+            updated = add_codex_writable_root(text, lock_dir.as_posix())
+        except tomllib.TOMLDecodeError as exc:
+            self.log(f"! {config_path} is not valid TOML ({exc}); sandbox root NOT added")
+            return
+        if not self.dry:
+            # The sandbox can't create it later: its parent isn't writable there.
+            lock_dir.mkdir(parents=True, exist_ok=True)
+        if updated is None:
+            self.log(f"! {config_path}: add {lock_dir.as_posix()!r} to "
+                     f"[{CODEX_SANDBOX_TABLE}] writable_roots yourself")
+        elif updated == text:
+            self.log(f"ok      {config_path} (queue lock dir already writable)")
+        else:
+            if config_path.exists() and not self.dry:
+                bak_dir = self.target / ".deploy-backups"
+                bak_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(config_path, bak_dir / f"config.toml.bak-{self.stamp}")
+            if not self.dry:
+                config_path.parent.mkdir(parents=True, exist_ok=True)
+                config_path.write_text(updated, encoding="utf-8")
+            self.log(f"sandbox {config_path} (writable_roots += {lock_dir.as_posix()})")
+
     def _write_settings(self, path: Path, settings: dict) -> None:
         if not self.dry:
             path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
@@ -360,6 +424,8 @@ class Deployer:
             self.deploy_hook()
         elif self.hook and self.tool.hook == "plugin":
             self.deploy_plugin()
+        elif self.hook and self.tool.hook == "sandbox":
+            self.deploy_sandbox_root()
         print()
         print(f"Done ({self.steps} step(s)).")
         lead = models.get(MAIN_SESSION_ROLE) or "(your choice)"
@@ -380,7 +446,8 @@ def main() -> int:
     parser.add_argument("--link", action="store_true", help="symlink copied dirs (live edits)")
     parser.add_argument("--dry-run", action="store_true", help="show actions without changing anything")
     parser.add_argument("--no-hook", action="store_true",
-                        help="don't install the heavy-queue hook (claude-code) / plugin (opencode)")
+                        help="don't install the heavy-queue hook (claude-code) / plugin (opencode)"
+                             " / sandbox writable root (codex)")
     args = parser.parse_args()
 
     tool = TOOLS[args.tool]

@@ -1,13 +1,17 @@
 """Tests for core/bin/heavy.py. Run: python -m unittest tests.test_heavy -v"""
 
 import json
+import ctypes
 import os
 import shutil
+import shlex
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from pathlib import Path
 
 HEAVY = Path(__file__).resolve().parent.parent / "core" / "bin" / "heavy.py"
@@ -19,6 +23,7 @@ START_TIMEOUT = 10
 RUN_TIMEOUT = 30
 SLEEP_SECONDS = 0.5
 LOCKED_SLOT_COMMAND_SECONDS = 60
+PR_SET_CHILD_SUBREAPER = 36
 
 HEAVY_COMMANDS = [
     "npm test", "pnpm run build", "npx jest --ci", "FOO=1 vitest run",
@@ -61,10 +66,20 @@ class IsHeavyTests(unittest.TestCase):
 
 @unittest.skipUnless(SHELL, "no POSIX shell available")
 class RunTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if sys.platform.startswith("linux"):
+            # Baseline crash regressions must also reap leaked grandchildren
+            # when run against the old implementation.
+            libc = ctypes.CDLL(None, use_errno=True)
+            if libc.prctl(PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) != 0:
+                raise OSError(ctypes.get_errno(), "cannot reap test descendants")
+
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="heavy-test-")
         self.addCleanup(shutil.rmtree, self.dir, True)
         self.procs = []
+        self.worker_pids = []
         self.addCleanup(self._kill_all)
         self.logger = Path(self.dir, "interval.py")
         self.logger.write_text(
@@ -81,7 +96,63 @@ class RunTests(unittest.TestCase):
         for proc in self.procs:
             if proc.poll() is None:
                 proc.kill()
-            proc.wait()
+        for pid in self.worker_pids:
+            if self._pid_alive(pid):
+                os.kill(pid, signal.SIGTERM if os.name == "nt" else signal.SIGKILL)
+                self._wait_dead(pid)
+        for proc in self.procs:
+            try:
+                proc.communicate(timeout=RUN_TIMEOUT)
+            finally:
+                for stream in (proc.stdout, proc.stderr):
+                    if stream is not None:
+                        stream.close()
+
+    def _pid_alive(self, pid):
+        if os.name == "nt":
+            from ctypes import wintypes
+            kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+            kernel.OpenProcess.restype = wintypes.HANDLE
+            kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+            kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+            handle = kernel.OpenProcess(0x1000, False, pid)
+            if not handle:
+                return False
+            try:
+                code = wintypes.DWORD()
+                self.assertTrue(kernel.GetExitCodeProcess(handle, ctypes.byref(code)))
+                return code.value == 259
+            finally:
+                kernel.CloseHandle(handle)
+        try:
+            try:
+                if os.waitpid(pid, os.WNOHANG)[0]:
+                    return False
+            except ChildProcessError:
+                pass
+            os.kill(pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+
+    def _wait_dead(self, pid):
+        deadline = time.monotonic() + START_TIMEOUT
+        while self._pid_alive(pid):
+            self.assertLess(time.monotonic(), deadline, f"worker {pid} survived cleanup")
+            time.sleep(0.01)
+
+    def _wait_marker(self, marker):
+        deadline = time.monotonic() + START_TIMEOUT
+        while True:
+            try:
+                return json.loads(marker.read_text())
+            except (FileNotFoundError, ValueError):
+                self.assertLess(time.monotonic(), deadline, "worker never started")
+                time.sleep(0.01)
+
+    def _python_command(self, code):
+        return shlex.quote(sys.executable.replace("\\", "/")) + " -c " + shlex.quote(code)
 
     def _env(self, slots=1, **extra):
         env = {k: v for k, v in os.environ.items() if k != heavy.ENV_HELD}
@@ -100,13 +171,16 @@ class RunTests(unittest.TestCase):
         self.procs.append(proc)
         return proc
 
-    def _hold_slot(self):
-        sleeper = f'"{sys.executable.replace(chr(92), "/")}" -c "import time; time.sleep({LOCKED_SLOT_COMMAND_SECONDS})"'
-        holder = self._spawn(sleeper)
-        deadline = time.time() + START_TIMEOUT
-        while not Path(self.dir, "slot-0.json").exists():
-            self.assertLess(time.time(), deadline, "holder never acquired slot")
-            time.sleep(0.05)
+    def _hold_slot(self, ignore_term=False):
+        marker = Path(self.dir, f"worker-{len(self.worker_pids)}.json")
+        code = "import os,signal,time,json;from pathlib import Path;"
+        if ignore_term and os.name != "nt":
+            code += "signal.signal(signal.SIGTERM, signal.SIG_IGN);"
+        code += (f"Path({str(marker)!r}).write_text(json.dumps({{'pid':os.getpid()}}));"
+                 f"time.sleep({LOCKED_SLOT_COMMAND_SECONDS})")
+        # Keep a shell ancestor: cancellation must clean the grandchild too.
+        holder = self._spawn(self._python_command(code) + "; wait")
+        self.worker_pids.append(self._wait_marker(marker)["pid"])
         return holder
 
     def _intervals(self, log):
@@ -144,8 +218,10 @@ class RunTests(unittest.TestCase):
     def test_two_slots_allow_at_most_two(self):
         self.assertLessEqual(self._concurrency_peak(2), 2)
 
+    @unittest.skipIf(os.name == "nt", "POSIX supervisor stops the workload")
     def test_killed_holder_frees_slot(self):
         holder = self._hold_slot()
+        worker = self.worker_pids[-1]
         holder.kill()
         holder.wait()
         start = time.time()
@@ -153,6 +229,85 @@ class RunTests(unittest.TestCase):
         proc.communicate(timeout=RUN_TIMEOUT)
         self.assertEqual(proc.returncode, 0)
         self.assertLess(time.time() - start, 5)
+        self._wait_dead(worker)
+
+    @unittest.skipIf(os.name == "nt", "POSIX signal delivery")
+    def test_killed_wrapper_keeps_slot_until_resistant_worker_stops(self):
+        holder = self._hold_slot(ignore_term=True)
+        worker = self.worker_pids[-1]
+        holder.kill()
+        holder.wait(timeout=RUN_TIMEOUT)
+        entrant = (f"import os,sys\ntry: os.kill({worker},0)\n"
+                   "except ProcessLookupError: sys.exit(0)\nelse: sys.exit(1)")
+        contender = self._spawn(self._python_command(entrant), AW_HEAVY_MAX_WAIT="3")
+        contender.communicate(timeout=RUN_TIMEOUT)
+        self.assertEqual(contender.returncode, 0, "new workload entered while old worker was alive")
+        self._wait_dead(worker)
+
+    @unittest.skipIf(os.name == "nt", "POSIX signal delivery")
+    def test_interrupt_and_termination_stop_grandchildren(self):
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(signal=sig):
+                holder = self._hold_slot()
+                worker = self.worker_pids[-1]
+                holder.send_signal(sig)
+                holder.communicate(timeout=RUN_TIMEOUT)
+                self._wait_dead(worker)
+
+    def test_killed_waiter_does_not_launch_command_later(self):
+        holder = self._hold_slot()
+        marker = Path(self.dir, "unexpected.json")
+        waiter = self._spawn(self._python_command(f"from pathlib import Path;Path({str(marker)!r}).touch()"))
+        self.assertIn("waiting for a slot", waiter.stderr.readline())
+        waiter.kill()
+        waiter.communicate(timeout=RUN_TIMEOUT)
+        holder.kill()
+        holder.communicate(timeout=RUN_TIMEOUT)
+        following = self._spawn("exit 0")
+        following.communicate(timeout=RUN_TIMEOUT)
+        self.assertEqual(following.returncode, 0)
+        self.assertFalse(marker.exists())
+
+    @unittest.skipIf(os.name == "nt", "POSIX supervisor stops the workload")
+    def test_normal_shell_exit_stops_background_worker(self):
+        marker = Path(self.dir, "background.json")
+        code = ("import os,time,json;from pathlib import Path;"
+                f"Path({str(marker)!r}).write_text(json.dumps({{'pid':os.getpid()}}));time.sleep(60)")
+        command = self._python_command(code) + " & " + self._python_command(
+            f"import time;from pathlib import Path\nwhile not Path({str(marker)!r}).exists(): time.sleep(.01)")
+        holder = self._spawn(command)
+        worker = self._wait_marker(marker)["pid"]
+        self.worker_pids.append(worker)
+        holder.communicate(timeout=RUN_TIMEOUT)
+        self.assertEqual(holder.returncode, 0)
+        self._wait_dead(worker)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "Linux subreaper")
+    def test_killed_wrapper_stops_descendant_in_separate_session(self):
+        marker = Path(self.dir, "detached.json")
+        worker_code = ("import os,signal,time,json;from pathlib import Path;"
+                       "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                       f"Path({str(marker)!r}).write_text(json.dumps({{'pid':os.getpid(),'parent':os.getppid()}}));time.sleep(60)")
+        code = (f"import subprocess,sys,time;subprocess.Popen([sys.executable,'-c',{worker_code!r}],"
+                "start_new_session=True);time.sleep(60)")
+        holder = self._spawn(self._python_command(code))
+        info = self._wait_marker(marker)
+        worker = info["pid"]
+        self.worker_pids.extend([worker, info["parent"]])
+        holder.kill()
+        holder.communicate(timeout=RUN_TIMEOUT)
+        self._wait_dead(worker)
+        following = self._spawn("exit 0", AW_HEAVY_MAX_WAIT="0")
+        following.communicate(timeout=RUN_TIMEOUT)
+        self.assertEqual(following.returncode, 0)
+
+    def test_original_stdin_reaches_command(self):
+        proc = subprocess.run(
+            [sys.executable, str(HEAVY), "run", "--shell", SHELL, "--", "cat"],
+            env=self._env(), input="original stdin\n", capture_output=True,
+            text=True, timeout=RUN_TIMEOUT)
+        self.assertEqual(proc.returncode, 0)
+        self.assertEqual(proc.stdout, "original stdin\n")
 
     def test_max_wait_exits_75(self):
         self._hold_slot()
@@ -167,6 +322,16 @@ class RunTests(unittest.TestCase):
         proc = self._spawn("exit 0", **{heavy.ENV_HELD: "1"})
         proc.communicate(timeout=RUN_TIMEOUT)
         self.assertEqual(proc.returncode, 0)
+
+    def test_unusable_lock_dir_runs_unqueued_with_warning(self):
+        blocker = Path(self.dir, "not-a-dir")
+        blocker.write_text("")
+        proc = self._spawn('echo "ran held=$AW_HEAVY_HELD"; exit 4', AW_HEAVY_DIR=str(blocker / "locks"))
+        out, err = proc.communicate(timeout=RUN_TIMEOUT)
+        self.assertEqual(proc.returncode, 4)
+        self.assertIn("ran held=1", out)
+        self.assertIn("queue unavailable", err)
+        self.assertNotIn("Traceback", err)
 
     def test_exit_code_propagates(self):
         proc = self._spawn("exit 3")
@@ -205,6 +370,17 @@ class RunTests(unittest.TestCase):
                               capture_output=True, text=True, timeout=RUN_TIMEOUT)
         self.assertIn("slot-0: busy", proc.stdout)
         self.assertIn("pid=", proc.stdout)
+
+
+class WindowsPathTests(unittest.TestCase):
+    def test_windows_runs_in_process_without_supervisor(self):
+        with mock.patch.object(heavy, "IS_WINDOWS", True), \
+                mock.patch.dict(os.environ, {heavy.ENV_HELD: ""}), \
+                mock.patch.object(heavy, "_run_owned", return_value=7) as owned, \
+                mock.patch.object(heavy, "_spawn_controlled") as spawn:
+            self.assertEqual(heavy.run_heavy("bash", "npm test"), 7)
+        owned.assert_called_once_with("bash", "npm test")
+        spawn.assert_not_called()
 
 
 class HookTests(unittest.TestCase):

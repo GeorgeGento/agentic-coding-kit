@@ -100,6 +100,14 @@ class ClaudeCodeDeployTests(DeployCase):
         self.assertFalse(old.exists())
         self.assertTrue(list((self.target / ".deploy-backups").glob("review-team.bak-*")))
 
+    def test_retired_agent_orchestrator_is_backed_up_and_removed(self):
+        old = self.target / "skills" / "agent-orchestrator"
+        old.mkdir(parents=True)
+        (old / "SKILL.md").write_text("old", encoding="utf-8")
+        self.assertOk(self.deploy("claude-code", self.target))
+        self.assertFalse(old.exists())
+        self.assertTrue(list((self.target / ".deploy-backups").glob("agent-orchestrator.bak-*")))
+
     def test_user_installed_skills_survive(self):
         mine = self.target / "skills" / "my-skill"
         mine.mkdir(parents=True)
@@ -126,12 +134,23 @@ class CodexDeployTests(DeployCase):
         self.assertNotIn("name: lead", text)  # frontmatter stripped when inlining
 
     def test_agents_are_valid_toml_and_inherit_model_when_profile_empty(self):
-        self.assertOk(self.deploy("codex", self.target))
+        self.assertOk(self.deploy("codex", self.target, "--profile", "local"))
         agent = tomllib.loads((self.target / "agents" / "mid.toml").read_text(encoding="utf-8"))
         self.assertEqual(agent["name"], "mid")
         self.assertTrue(agent["description"])
         self.assertIn("# Hierarchy Protocol", agent["developer_instructions"])
         self.assertNotIn("model", agent)
+
+    def test_default_profile_renders_models_and_reminds_about_lead(self):
+        result = self.deploy("codex", self.target)
+        self.assertOk(result)
+        models = deploy.load_profile("openai")
+        for tier in ("senior", "mid", "junior"):
+            agent = tomllib.loads(
+                (self.target / "agents" / f"{tier}.toml").read_text(encoding="utf-8"))
+            self.assertEqual(agent["model"], models[tier])
+        self.assertFalse((self.target / "agents" / "lead.toml").exists())
+        self.assertIn(f"set the Lead (main session) model to {models['lead']}", result.stdout)
 
     def test_skills_go_to_shared_agents_dir_and_no_hook(self):
         self.assertOk(self.deploy("codex", self.target))
@@ -139,6 +158,72 @@ class CodexDeployTests(DeployCase):
         self.assertFalse((self.target / "skills" / "setup").exists())  # Claude-only skill
         self.assertFalse((self.target / "settings.json").exists())
         self.assertTrue((self.home / ".agent-workflows" / "bin" / "heavy.py").exists())
+
+
+    def _lock_dir(self):
+        return (self.home / ".agent-workflows" / "heavy").as_posix()
+
+    def _sandbox_roots(self):
+        config = tomllib.loads((self.target / "config.toml").read_text(encoding="utf-8"))
+        return config["sandbox_workspace_write"]["writable_roots"]
+
+    def test_lock_dir_made_writable_in_new_config(self):
+        self.assertOk(self.deploy("codex", self.target))
+        self.assertEqual(self._sandbox_roots(), [self._lock_dir()])
+        self.assertTrue(Path(self._lock_dir()).is_dir())  # sandbox can't create it itself
+
+    def test_existing_config_is_preserved_backed_up_and_idempotent(self):
+        self.target.mkdir()
+        original = 'model = "m"\n\n[sandbox_workspace_write]\nnetwork_access = true\n'
+        (self.target / "config.toml").write_text(original, encoding="utf-8")
+        self.assertOk(self.deploy("codex", self.target))
+        config = tomllib.loads((self.target / "config.toml").read_text(encoding="utf-8"))
+        self.assertEqual(config["model"], "m")
+        self.assertTrue(config["sandbox_workspace_write"]["network_access"])
+        self.assertEqual(self._sandbox_roots(), [self._lock_dir()])
+        backups = list((self.target / ".deploy-backups").glob("config.toml.bak-*"))
+        self.assertEqual([b.read_text(encoding="utf-8") for b in backups], [original])
+        once = (self.target / "config.toml").read_text(encoding="utf-8")
+        result = self.deploy("codex", self.target)
+        self.assertOk(result)
+        self.assertIn("already writable", result.stdout)
+        self.assertEqual((self.target / "config.toml").read_text(encoding="utf-8"), once)
+
+    def test_other_writable_roots_are_left_to_the_user(self):
+        self.target.mkdir()
+        original = '[sandbox_workspace_write]\nwritable_roots = ["/elsewhere"]\n'
+        (self.target / "config.toml").write_text(original, encoding="utf-8")
+        result = self.deploy("codex", self.target)
+        self.assertOk(result)
+        self.assertIn("yourself", result.stdout)
+        self.assertEqual((self.target / "config.toml").read_text(encoding="utf-8"), original)
+
+    def test_invalid_config_toml_is_left_untouched(self):
+        self.target.mkdir()
+        (self.target / "config.toml").write_text("not = [valid", encoding="utf-8")
+        result = self.deploy("codex", self.target)
+        self.assertOk(result)
+        self.assertIn("not valid TOML", result.stdout)
+        self.assertEqual((self.target / "config.toml").read_text(encoding="utf-8"), "not = [valid")
+
+    def test_no_hook_and_dry_run_skip_config(self):
+        self.assertOk(self.deploy("codex", self.target, "--no-hook"))
+        self.assertFalse((self.target / "config.toml").exists())
+        dry = self.home / "dry" / ".codex"
+        self.assertOk(self.deploy("codex", dry, "--dry-run"))
+        self.assertFalse((dry / "config.toml").exists())
+
+
+class CodexWritableRootTests(unittest.TestCase):
+    def test_dotted_key_table_is_not_edited(self):
+        text = "sandbox_workspace_write.network_access = true\n"
+        self.assertIsNone(deploy.add_codex_writable_root(text, "/h/heavy"))
+
+    def test_header_with_comment_gets_key_inserted(self):
+        text = "[sandbox_workspace_write] # mine\nnetwork_access = true\n"
+        updated = deploy.add_codex_writable_root(text, "/h/heavy")
+        self.assertEqual(tomllib.loads(updated)["sandbox_workspace_write"],
+                         {"network_access": True, "writable_roots": ["/h/heavy"]})
 
 
 class OpencodeDeployTests(DeployCase):

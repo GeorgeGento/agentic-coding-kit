@@ -36,7 +36,7 @@ python deploy.py --tool opencode       # opencode    -> ~/.config/opencode (prof
 python deploy.py --profile local       # any tool, different tier->model mapping
 python deploy.py --dry-run             # preview, change nothing
 python deploy.py --link                # symlink guidelines/roles/protocols/skills (live edits)
-python deploy.py --no-hook             # skip the queue hook (Claude Code) / plugin (opencode)
+python deploy.py --no-hook             # skip the queue hook (Claude Code) / plugin (opencode) / sandbox root (Codex)
 python deploy.py --target /custom/path
 ```
 
@@ -47,7 +47,7 @@ What each tool gets:
 | Instructions | `CLAUDE.md` with `@imports` | `AGENTS.md`, always-loaded files inlined | `AGENTS.md`, inlined |
 | Tier agents | `agents/<tier>.md` (`model:`) | `agents/<tier>.toml` (`model`, `developer_instructions`) | `agents/<tier>.md` (`mode: subagent`, `model: provider/id`) |
 | Skills | `~/.claude/skills/` (+ `/setup`) | `~/.agents/skills/` | `~/.config/opencode/skills/` |
-| Heavy queue | PreToolUse hook merged into `settings.json` | instruction only (agents call `heavy.py`) | `plugins/heavy-queue.js` |
+| Heavy queue | PreToolUse hook merged into `settings.json` | instruction (agents call `heavy.py`); lock dir added to `[sandbox_workspace_write] writable_roots` in `config.toml` | `plugins/heavy-queue.js` |
 
 The instructions file is always **rendered** (never symlinked). After editing `core/rules.md`, re-run the deploy. **Set the Lead's model yourself** (the main session); deploy prints where.
 
@@ -78,8 +78,10 @@ Tiers are roles, not models, so the same protocol runs on any LLM set. Where sub
 Test runners, builds, type-checks and linters (`npm test`, `ng build`, `tsc`, `jest`, `vitest`, `pytest`, `docker build`, `cargo test`, …) wait for one of **2 slots**, shared across every session, project and tool on the machine. They run at **below-normal CPU priority**.
 
 - Cheap commands (`grep`, `git`, `ls`, reading files) are never queued. Neither are dev servers or watch mode (`ng serve`, `npm run dev`, `--watch`), because they never finish.
-- A crashed agent can't leave a slot stuck: slots are OS file locks.
+- On POSIX, a crashed caller's supervisor stops its workload before releasing the OS file lock. Cancellation and normal shell exit also clean up remaining background workers. Windows has no supervisor: the wrapper holds the slot and the OS frees the lock when it exits.
+- POSIX workers use a process group. Linux also cleans up adopted descendants that create a separate session. On macOS, descendants that deliberately detach from the process group are outside this cleanup guarantee.
 - A heavy command that calls another heavy command doesn't wait in the queue twice.
+- If the lock dir can't be written (e.g. a sandbox without it in its writable roots), the command still runs, unqueued, with a warning.
 
 ```sh
 python3 ~/.agent-workflows/bin/heavy.py status                                # what's running
