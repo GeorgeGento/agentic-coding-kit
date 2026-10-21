@@ -24,6 +24,10 @@ Read for anything touching auth, secrets, user data, or logs. Security is a prim
 - Hash passwords with Argon2id or bcrypt. Never store plaintext passwords, recovery tokens, API keys, or refresh tokens; hash or tokenize lookup-only values.
 - Secure cookies for browser sessions: `HttpOnly`, `Secure`, `SameSite=Lax` or stricter, scoped path/domain, idle + absolute timeout, rotation after privilege change.
 - Protect auth, password-reset, email-change, MFA, and admin flows against enumeration, brute force, CSRF, replay, and session fixation. Require re-auth or MFA for sensitive actions (payment/role/security changes, exports, destructive ops, key creation).
+- **Fail closed.** When a required check can't pass (e.g. 2FA required but not enrolled), issue no session. Return only a short-lived, limited-purpose ticket (e.g. for enrollment), never a full session that the client is trusted to restrict.
+- **Purpose tokens** (invite, enrollment, reset, verify) are high-entropy, single-use, short-TTL, stored hashed, and namespaced per purpose, so one kind can't be replayed as another.
+- **Protected by default.** Routes require auth unless explicitly marked public (global guard + a public opt-out), so a forgotten decorator can't expose an endpoint. Admin routes are never public.
+- **Trust an organisation only via verified identity claims** (e.g. Microsoft `tid`, Google `hd`), never by matching email-domain strings. Revoke sessions immediately when a user loses access.
 - Admin panels must never allow deleting the last remaining admin or the currently logged-in user — enforce a backend guard **and** a disabled/hidden frontend control.
 
 ## Credentials & passwords (never logged)

@@ -31,6 +31,12 @@ Read for building UI, components, accessibility, and public-page SEO.
 
 - Clicking anywhere on a row opens **Edit** (or **View** if read-only). The whole row is clickable with `cursor-pointer` + hover feedback; keep action buttons for discoverability but `stopPropagation` on inline controls.
 
+## Admin screens
+
+- Generic CRUD / model-driven screens for plain data (articles, categories, lookup tables).
+- Purpose-built screens for rare, high-stakes configuration (auth, roles/permissions, tenancy setup, editors). Never force these into a generic CRUD shape.
+- Wizards for infrequent create/setup flows, not for editing.
+
 ## 2FA / OTP inputs
 
 - Autofocus the code field the moment the step appears (`ViewChild` + `effect`/short timeout — not the HTML `autofocus` attribute alone).
@@ -48,6 +54,7 @@ Read for building UI, components, accessibility, and public-page SEO.
 ## Verifying in the running app
 
 - **Dev server: ask, don't assume.** If a check needs the dev server, prompt the user (structured question if the harness has one): you start it (in the background), or they run it and tell you when it's up. Never start a second one if the user already runs one.
+- **Every UI-touching change is verified in a real browser before it's done, scoped to what you touched.** Run the API on the throwaway test DB (via an env override, never the dev DB) and the frontend, following the dev-server rule above. In headless Chromium/Playwright, drive only the changed component/feature and the flows that directly use it. For a shared kit component, that means one or two representative screens, not every consumer. No full-app sweeps per change: the full visual/UI suite runs once at the gate. Check console errors, failed requests, and layout at 390px and desktop, in light and dark. Unit tests, HTTP e2e and curl'ing SSR HTML don't count. Prefer committed visual-flow specs that screenshot each step into `.output/`, and look at the screenshots before reporting. Never print credentials, and stop every server you started.
 - **Stale state before code bugs.** When the running app doesn't match your edit, first rule out stale state: dev-server hot reload, browser cache, SSR/translation caches, or an external cache (e.g. Redis) that survives restarts and deploys. Confirm via a build, the actually-served bundle, or a cold (uncached) run; ask the user for a hard refresh or restart. Never flush a shared cache (`FLUSHALL`/`FLUSHDB`) — delete only the specific keys, with approval.
 
 ## Internationalization

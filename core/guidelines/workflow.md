@@ -7,7 +7,9 @@ How to approach tasks. Read for planning, multi-step work, and reviews.
 - State assumptions explicitly; if uncertain, ask. Don't hide confusion.
 - If multiple interpretations exist, present them — don't silently pick one.
 - If a simpler approach exists, say so. Push back when warranted.
+- **Least-change vs best end-state: prompt the user.** When a quick fix and a better long-term design both exist, present both with their tradeoffs (effort, risk, migration/back-compat cost, long-term quality) and prompt the user to choose (structured question if the harness has one), recommended option first. Don't silently pick the least-change option or offer "keep for now, follow up later" as the only path. If nothing is live yet (no production deployment, no real user data), say so: migration cost is then near zero, which usually favors the end-state design. Rebuildable demo data is design freedom, never permission to wipe it.
 - When asked "what do you suggest?" or for a proposal, **present the plan and wait for discussion**. Do NOT start building until confirmed.
+- **Surface a technology's restrictions before the user commits to it.** Every stack, runtime, engine, SDK or toolchain recommendation includes a short "restrictions and costs" part: OS security features it trips (e.g. Windows Smart App Control blocks every locally compiled, unsigned executable — all Rust/Tauri builds), required toolchains and disk use (incl. build caches), code-signing / notarization per platform and its cost (Windows certificate, Apple Developer $99/yr, Linux none), store and licence terms, platform sandbox limits (e.g. no background microphone on iOS), and known incompatibilities. Check the user's machine state (security features, installed toolchains, free disk) before the decision, and flag any **irreversible** step (e.g. turning Smart App Control off needs a Windows reinstall to undo) explicitly before it happens. Written after Tauri was chosen without these being raised up front.
 
 ## Simplicity first
 
@@ -42,6 +44,7 @@ Make success criteria verifiable and cover them with tests — treat tests as pa
 ## TODO tracking
 
 - Keep a `TODO.md` at the project root for non-trivial projects. Check it at session start; mark tasks done (`[x]`) or add new ones (`[ ]`). It gives continuity across sessions.
+- For multi-session work, start `TODO.md` with a one-line **Status** and a **Resume here** pointer. Read both at session start and update them as phases land. Keep long design plans in their own file, not in TODO.
 
 ## Documentation operations
 

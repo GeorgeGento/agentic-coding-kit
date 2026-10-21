@@ -33,7 +33,7 @@ Don't stop at "it compiles." During substantive changes, hunt for and surface th
 - **Bypasses** — `@ts-ignore`, `@ts-expect-error`, `eslint-disable`, `as any`, suspicious assertions. Each is a flag: investigate and remove if the real issue can be fixed.
 - **Stale shims / "moved to X" re-exports** — artifacts of an unfinished migration. Either finish the migration or document why the shim must stay.
 - **`TODO` / `FIXME` / `HACK` / `XXX`** — surface them; ask whether to resolve now or leave with a real ticket reference.
-- **Half-finished migrations** — a renamed folder with one straggler import, a feature split across old and new locations, mappers/types that disagree.
+- **Half-finished migrations** — a renamed folder with one straggler import, a feature split across old and new locations, mappers/types that disagree. After moving or splitting directories, grep tooling config (lint overrides, package scripts, CI paths, tsconfig `paths`, test globs) for the old path: a glob that matches nothing fails silently.
 
 When grouping imports, **use the highest available barrel** (`from './enums'`, not `from './enums/foo/bar.enum'`) and **merge consecutive imports from the same module** into one statement.
 

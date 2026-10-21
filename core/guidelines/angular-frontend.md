@@ -7,7 +7,19 @@ Read for Angular, frontend architecture, and Tailwind. Targets **Angular 22** (l
 - **Standalone** components / directives / pipes. No `NgModule` for new code.
 - Keep components lean: components coordinate UI state; services handle API access + domain logic; pure helpers do formatting/calculation.
 - **One component per folder** with separate `.ts`, `.html`, and `.scss`. Folder name = selector root (kebab-case). No inline `template`/`styles` for reusable or non-trivial components (throwaway single-file demos excepted).
+- Set the generator so the CLI produces that shape: in `angular.json`, `"@schematics/angular:component": { "style": "scss", "inlineTemplate": false, "inlineStyle": false }`. Create the `.scss` even when it's empty, so every component has the same structure.
 - `ChangeDetectionStrategy.OnPush` on every component (zoneless-ready).
+
+## App folder layout
+
+- **New app:** prompt the user for the folder structure (structured question if the harness has one) before scaffolding, recommending this layout under `src/app/`:
+  - `components/`: shared components incl. app-shell pieces (the root component is the shell, no `shell/` folder).
+  - `pages/`: routed features.
+  - `data-access/`: HTTP services, persistence adapters, API path definitions (not `data/`).
+  - `store/`: signal stores, one per file, app-scoped state only.
+  - `utils/`: pure helpers and constants, one canonical each.
+  - `auth/`: guards and auth config.
+- **Existing app:** follow its structure as found; don't reorganize it unasked.
 
 ## Signals-first state
 
@@ -15,6 +27,7 @@ Read for Angular, frontend architecture, and Tailwind. Targets **Angular 22** (l
 - **Angular 22 runs zoneless by default** — plain (non-signal) properties don't trigger template re-render. Anything bound in a template must be a signal.
 - Immutability: never mutate a signal's value in place — set/update with a new reference.
 - Never `.set()` a signal inside `computed()` (NG0600), and never read and write the same signal in one `effect()` — build the value in a local variable, then set once.
+- `model()` creates its `xChange` output automatically. Declaring `xChange = output()` next to it is an error (`NG1054`), and `.set()` on the model already emits.
 - Drop `ngOnInit` / `ngAfterViewInit` when a signal, `computed`, or `effect` does the job; use lifecycle hooks only when genuinely right (e.g. DOM measurement after view init).
 
 ## Dependency injection & extensibility

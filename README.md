@@ -14,7 +14,7 @@ One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows
 | Path | What |
 | --- | --- |
 | `core/rules.md` | Global always-on rules + the "when to read what" router. Rendered as `CLAUDE.md` / `AGENTS.md` |
-| `core/guidelines/` | Topic rules: coding-standards, workflow, testing, **performance** (these 4 load every session), plus git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo (on demand) |
+| `core/guidelines/` | Topic rules: coding-standards, workflow, testing, **performance** (these 4 load every session), plus git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, library-design, ux-ui-seo (on demand) |
 | `core/guidelines/languages/` | Language-specific rules (on demand): `README.md` index → one file per language (`javascript-typescript.md`, …) |
 | `core/roles/` | `lead` (your main session, loads every session) and `senior` / `mid` / `junior` (rendered as subagents) |
 | `core/protocols/` | `hierarchy.md` (brief → report → audit → escalate; inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |

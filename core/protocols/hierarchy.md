@@ -40,6 +40,8 @@ DONE MEANS:  lint + build + tests green for the slice; report in the format belo
 
 A brief without ACCEPTANCE is not a brief. If the receiver asks "which files?" or returns prose instead of a report, the brief was too thin. Fix the brief.
 
+**Size work small.** One agent per feature, screen or component, with a tight, disjoint file list. Never one agent for a whole phase. Paste the plan excerpt or bug list the agent needs instead of "read these docs". Route each audit finding to the agent that owns its files. Agents run targeted tests plus an affected smoke test; the full suite runs once per batch at the gate (see [testing](../guidelines/testing.md)).
+
 ## Report (up)
 
 ```
@@ -61,7 +63,7 @@ Before you accept a child's report and pass it up, **verify it yourself, with ev
 3. Check against the guidelines, **performance included**: merged loops, no lookups inside loops, an index for every new query, no N+1, bounded reads.
 4. Check that it fits the architecture you (or your parent) decided.
 
-**Reject** with a numbered defect list (what, where, why, expected), sent back to the same agent so it keeps its context. **Max 2 bounces.** After that, either do it yourself (if within your tier's role) or escalate up with what was tried. Once you accept, the work is yours. Your parent will audit it as your output.
+**Reject** with a numbered defect list (what, where, why, expected), sent back to the same agent so it keeps its context. **Max 2 bounces.** Every round fixes the root cause; never a guess-and-retry loop. After that, either do it yourself (if within your tier's role) or escalate up with what was tried. Once you accept, the work is yours. Your parent will audit it as your output.
 
 ## Escalation (up)
 
@@ -76,9 +78,10 @@ Escalating early is cheap. Guessing wrong and having it audited out two levels u
 ## Mechanics
 
 - **Spawning:** if your harness lets you spawn subagents, delegate directly to the tier's agent (Claude Code: `subagent_type: senior | mid | junior`). If it can't nest, add a `DELEGATE:` list of briefs (with the target tier) to your report. Your parent dispatches them and sends the results back to **you** for audit, so accountability stays with you.
-- **Continuity:** send rework to the *same* agent (Claude Code: `SendMessage` to its id), not a fresh one.
+- **Continuity:** send rework, including auditors' findings, to the *same* agent that built it (Claude Code: `SendMessage` to its id), not a fresh one. Auditors (review, security, release) are always separate agents from the builder.
 - **No subagents at all** (single-agent harness or a local model without tools for it): run the tiers sequentially yourself. Plan as Senior, implement as Mid, then audit as Senior against the written acceptance criteria before reporting.
 - **Parallelism:** run independent briefs in parallel, **at most 4 code-changing agents at once** (each agent is itself a heavy process). Parallel agents that mutate code must have disjoint SCOPE or isolated worktrees.
+- **Parallel Seniors share one gate.** Each verifies its slice with targeted suites only. The Lead runs one full gate over the whole tree at the end, plus a cheap build + lint + unit check at each coordinated sync. When suites share a test DB, the Lead grants exclusive test-DB windows, and two DB-backed e2e/UI suites never run at once.
 - **Heavy commands** (tests, builds, type-checks, linters) go through the machine-wide queue: `python3 "$HOME/.agent-workflows/bin/heavy.py" run --shell bash -- "<command>"` (`python` on Windows; `--shell powershell` from PowerShell). In Claude Code a hook wraps them automatically. Exit 75 means the queue is busy: wait and retry, or run in the background. Never queue cheap commands (`grep`, `git`, reading files) or dev servers/watchers.
 - **Shared state:** for multi-agent runs, keep the plan and decisions in `.team/` (`context.md`, `plan.md`), per [team mechanics](teams.md). Multi-agent task types (feature, review, security, …) are in [task-types](task-types.md). The delegator is the single writer.
 - **Safety:** no agent at any tier commits, pushes, or deletes data without explicit user instruction relayed by the Lead.

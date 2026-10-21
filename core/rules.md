@@ -37,6 +37,7 @@ The user's own memory lives in `{{MEMORY_DIR}}`. It is shared by every tool and 
 | Writing or editing code in any language (JS/TS, …) | [`guidelines/languages/README.md`](guidelines/languages/README.md), then the file for that language |
 | Angular / frontend / Tailwind | [`guidelines/angular-frontend.md`](guidelines/angular-frontend.md) |
 | Node / NestJS / API / MongoDB | [`guidelines/backend-nodejs.md`](guidelines/backend-nodejs.md) |
+| Authoring a reusable library / framework / shared package | [`guidelines/library-design.md`](guidelines/library-design.md) |
 | UI/UX, components, accessibility, SEO | [`guidelines/ux-ui-seo.md`](guidelines/ux-ui-seo.md) |
 | React / Vue / Ionic / Electron / other frameworks | No guideline file. Use the matching skill if installed; the project's own `CLAUDE.md`/`AGENTS.md` carries project conventions |
 | Delegating to Senior/Mid/Junior agents (any code change) | [`protocols/hierarchy.md`](protocols/hierarchy.md) |
