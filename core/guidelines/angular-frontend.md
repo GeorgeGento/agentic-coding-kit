@@ -14,6 +14,7 @@ Read for Angular, frontend architecture, and Tailwind. Targets **Angular 22** (l
 - Use `signal()` / `computed()` / `effect()` / `input()` / `output()` / `model()`. Prefer signals over `BehaviorSubject` for local state; use RxJS where streams are the natural fit (HTTP, user events).
 - **Angular 22 runs zoneless by default** — plain (non-signal) properties don't trigger template re-render. Anything bound in a template must be a signal.
 - Immutability: never mutate a signal's value in place — set/update with a new reference.
+- Never `.set()` a signal inside `computed()` (NG0600), and never read and write the same signal in one `effect()` — build the value in a local variable, then set once.
 - Drop `ngOnInit` / `ngAfterViewInit` when a signal, `computed`, or `effect` does the job; use lifecycle hooks only when genuinely right (e.g. DOM measurement after view init).
 
 ## Dependency injection & extensibility

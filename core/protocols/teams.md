@@ -14,7 +14,7 @@ Not every skill uses every stage — `analyze` swaps verify for a completeness c
 
 ## Shared memory (deterministic, on disk)
 
-Subagents have isolated contexts, so shared state lives in files under `<path>/.team/`:
+Subagents have isolated contexts, so shared state lives in files under `<path>/.team/` (add `.team/` to `.gitignore` when you create it; it is never committed):
 
 - `context.md` — the shared brief: project summary, architecture notes, symptoms, focus areas, conventions all agents must respect, and a running "decisions so far" list. Written before round 1, updated between rounds.
 - `findings.json` — the canonical **id-keyed** store. Every finding has a stable `id`; the **orchestrator is the single writer**. Finders return findings (orchestrator assigns ids + appends); verifiers return `{id, ...}` and the orchestrator merges by id. Keyed merges mean no prose-matching and no cross-contamination. It is also the **recovery point** — resume from it, never re-run finders.
@@ -66,7 +66,7 @@ Stop at 0 open blockers, a **dry round** (no new confirmed findings two rounds r
 
 ## Workflow tool
 
-Prefer the Workflow tool when available: pass the findings schema as its `schema` option (validation at the tool-call layer, agents retry on mismatch), gain resume-after-crash and token budgets, and use `isolation: 'worktree'` when agents mutate files in parallel. Otherwise batch parallel Agent calls and validate the JSON yourself. Default to `pipeline()` (per-item, no barrier); use a barrier only when a stage genuinely needs all prior results (dedup, early-exit on zero).
+**Opt-in only.** Default to batched parallel subagent calls and validate their JSON yourself. Use a workflow/orchestration tool only in the **Hierarchy + workflows** session mode (see the Lead role) or when the user explicitly asks for one — fan-out runs are slow and token-expensive, and runs that die mid-way leave half-written edits. When opted in: pass the findings schema as its `schema` option (validation at the tool-call layer, agents retry on mismatch), gain resume-after-crash and token budgets, and use `isolation: 'worktree'` when agents mutate files in parallel. Default to `pipeline()` (per-item, no barrier); use a barrier only when a stage genuinely needs all prior results (dedup, early-exit on zero).
 
 ## Implementing (mutation) — opt-in only
 

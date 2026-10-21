@@ -163,14 +163,18 @@ class CodexDeployTests(DeployCase):
     def _lock_dir(self):
         return (self.home / ".agent-workflows" / "heavy").as_posix()
 
+    def _memory_dir(self):
+        return (self.home / ".agent-memory").as_posix()
+
     def _sandbox_roots(self):
         config = tomllib.loads((self.target / "config.toml").read_text(encoding="utf-8"))
         return config["sandbox_workspace_write"]["writable_roots"]
 
     def test_lock_dir_made_writable_in_new_config(self):
         self.assertOk(self.deploy("codex", self.target))
-        self.assertEqual(self._sandbox_roots(), [self._lock_dir()])
+        self.assertEqual(self._sandbox_roots(), [self._lock_dir(), self._memory_dir()])
         self.assertTrue(Path(self._lock_dir()).is_dir())  # sandbox can't create it itself
+        self.assertTrue(Path(self._memory_dir()).is_dir())
 
     def test_existing_config_is_preserved_backed_up_and_idempotent(self):
         self.target.mkdir()
@@ -180,7 +184,7 @@ class CodexDeployTests(DeployCase):
         config = tomllib.loads((self.target / "config.toml").read_text(encoding="utf-8"))
         self.assertEqual(config["model"], "m")
         self.assertTrue(config["sandbox_workspace_write"]["network_access"])
-        self.assertEqual(self._sandbox_roots(), [self._lock_dir()])
+        self.assertEqual(self._sandbox_roots(), [self._lock_dir(), self._memory_dir()])
         backups = list((self.target / ".deploy-backups").glob("config.toml.bak-*"))
         self.assertEqual([b.read_text(encoding="utf-8") for b in backups], [original])
         once = (self.target / "config.toml").read_text(encoding="utf-8")
@@ -189,9 +193,20 @@ class CodexDeployTests(DeployCase):
         self.assertIn("already writable", result.stdout)
         self.assertEqual((self.target / "config.toml").read_text(encoding="utf-8"), once)
 
-    def test_other_writable_roots_are_left_to_the_user(self):
+    def test_existing_simple_writable_roots_get_new_roots_appended(self):
         self.target.mkdir()
-        original = '[sandbox_workspace_write]\nwritable_roots = ["/elsewhere"]\n'
+        original = f'[sandbox_workspace_write]\nwritable_roots = ["{self._lock_dir()}"]\n'
+        (self.target / "config.toml").write_text(original, encoding="utf-8")
+        self.assertOk(self.deploy("codex", self.target))
+        self.assertEqual(self._sandbox_roots(), [self._lock_dir(), self._memory_dir()])
+        once = (self.target / "config.toml").read_text(encoding="utf-8")
+        result = self.deploy("codex", self.target)
+        self.assertIn("already writable", result.stdout)
+        self.assertEqual((self.target / "config.toml").read_text(encoding="utf-8"), once)
+
+    def test_unsafe_writable_roots_layout_is_left_to_the_user(self):
+        self.target.mkdir()
+        original = '[sandbox_workspace_write]\nwritable_roots = [\n  "/elsewhere",\n]\n'
         (self.target / "config.toml").write_text(original, encoding="utf-8")
         result = self.deploy("codex", self.target)
         self.assertOk(result)
@@ -215,6 +230,33 @@ class CodexDeployTests(DeployCase):
 
 
 class CodexWritableRootTests(unittest.TestCase):
+    def roots(self, text):
+        return tomllib.loads(text)["sandbox_workspace_write"]["writable_roots"]
+
+    def test_empty_config_gets_root(self):
+        self.assertEqual(self.roots(deploy.add_codex_writable_root("", "/h/a")), ["/h/a"])
+
+    def test_simple_list_gets_root_appended_keeping_others(self):
+        text = '[sandbox_workspace_write]\nwritable_roots = ["/x"]  # mine\n'
+        updated = deploy.add_codex_writable_root(text, "/h/a")
+        self.assertEqual(self.roots(updated), ["/x", "/h/a"])
+        self.assertIn("# mine", updated)
+        self.assertEqual(text, '[sandbox_workspace_write]\nwritable_roots = ["/x"]  # mine\n')
+
+    def test_empty_list_and_trailing_comma(self):
+        for inner in ("", '"/x",'):
+            text = f"[sandbox_workspace_write]\nwritable_roots = [{inner}]\n"
+            updated = deploy.add_codex_writable_root(text, "/h/a")
+            self.assertEqual(self.roots(updated)[-1], "/h/a")
+
+    def test_already_listed_is_unchanged_and_idempotent(self):
+        text = '[sandbox_workspace_write]\nwritable_roots = ["/x", "/h/a"]\n'
+        self.assertEqual(deploy.add_codex_writable_root(text, "/h/a"), text)
+
+    def test_multiline_list_is_not_edited(self):
+        text = '[sandbox_workspace_write]\nwritable_roots = [\n "/x",\n]\n'
+        self.assertIsNone(deploy.add_codex_writable_root(text, "/h/a"))
+
     def test_dotted_key_table_is_not_edited(self):
         text = "sandbox_workspace_write.network_access = true\n"
         self.assertIsNone(deploy.add_codex_writable_root(text, "/h/heavy"))
@@ -258,6 +300,96 @@ class OpencodeDeployTests(DeployCase):
         result = subprocess.run(["node", "--check", str(mjs)], capture_output=True, text=True,
                                 timeout=RUN_TIMEOUT)
         self.assertOk(result)
+
+
+class MemoryTests(DeployCase):
+    TOOL_TARGETS = {"claude-code": ".claude", "codex": ".codex",
+                    "opencode": ".config/opencode"}
+
+    def target(self, tool):
+        return self.home / self.TOOL_TARGETS[tool]
+
+    def memory(self):
+        return self.home / ".agent-memory"
+
+    def test_rendered_instructions_reference_memory_dir(self):
+        mem = self.memory().as_posix()
+        for tool, rel in self.TOOL_TARGETS.items():
+            self.assertOk(self.deploy(tool, self.target(tool)))
+            name = "CLAUDE.md" if tool == "claude-code" else "AGENTS.md"
+            text = (self.target(tool) / name).read_text(encoding="utf-8")
+            self.assertNotIn("{{MEMORY_", text, tool)
+            self.assertIn(mem, text)
+            if tool == "claude-code":
+                self.assertIn(f"\n@{mem}/MEMORY.md\n", text)
+            else:
+                self.assertIn(f"**At session start, read `{mem}/MEMORY.md`**", text)
+
+    def test_fresh_home_gets_seed_files(self):
+        result = self.deploy("claude-code", self.target("claude-code"))
+        self.assertOk(result)
+        for name in ("MEMORY.md", "README.md"):
+            self.assertEqual((self.memory() / name).read_bytes(),
+                             (deploy.MEMORY_SEED_DIR / name).read_bytes())
+        self.assertEqual(result.stdout.count("seed    "), 2)
+
+    def test_only_missing_seed_file_is_created(self):
+        self.memory().mkdir()
+        index = self.memory() / "MEMORY.md"
+        index.write_bytes(b"mine\n")
+        result = self.deploy("claude-code", self.target("claude-code"))
+        self.assertOk(result)
+        self.assertEqual(index.read_bytes(), b"mine\n")
+        self.assertEqual((self.memory() / "README.md").read_bytes(),
+                         (deploy.MEMORY_SEED_DIR / "README.md").read_bytes())
+        self.assertEqual(result.stdout.count("seed    "), 1)
+
+    def test_link_mode_seeds_real_files(self):
+        self.assertOk(self.deploy("claude-code", self.target("claude-code"), "--link"))
+        for name in ("MEMORY.md", "README.md"):
+            path = self.memory() / name
+            self.assertTrue(path.is_file() and not path.is_symlink(), name)
+
+    def test_existing_memory_is_untouched_even_with_link(self):
+        self.memory().mkdir()
+        index = self.memory() / "MEMORY.md"
+        entry = self.memory() / "likes-tabs.md"
+        index.write_bytes(b"custom index\r\n- [T](likes-tabs.md) \xe2\x80\x94 h\n")
+        entry.write_bytes(b"---\nname: x\n---\nbody\n")
+        readme = self.memory() / "README.md"
+        readme.write_bytes(b"my readme\n")
+        before = (index.read_bytes(), entry.read_bytes(), readme.read_bytes())
+        for extra in ((), ("--link",)):
+            for tool in self.TOOL_TARGETS:
+                result = self.deploy(tool, self.target(tool), *extra)
+                self.assertOk(result)
+                self.assertIn("user-owned, untouched", result.stdout)
+                self.assertFalse(index.is_symlink())
+        self.assertEqual((index.read_bytes(), entry.read_bytes(), readme.read_bytes()), before)
+        self.assertEqual(sorted(p.name for p in self.memory().iterdir()),
+                         ["MEMORY.md", "README.md", "likes-tabs.md"])
+        for tool in self.TOOL_TARGETS:
+            baks = self.target(tool) / ".deploy-backups"
+            if baks.exists():
+                self.assertFalse([p for p in baks.iterdir() if "MEMORY" in p.name or "likes" in p.name])
+
+    def test_dry_run_creates_nothing(self):
+        for tool in self.TOOL_TARGETS:
+            self.assertOk(self.deploy(tool, self.target(tool), "--dry-run"))
+        self.assertFalse(self.memory().exists())
+
+    def test_git_hint_only_without_git_repo(self):
+        result = self.deploy("claude-code", self.target("claude-code"))
+        self.assertIn("private git repo", result.stdout)
+        (self.memory() / ".git").mkdir()
+        result = self.deploy("claude-code", self.target("claude-code"))
+        self.assertNotIn("private git repo", result.stdout)
+        self.assertEqual(sorted(p.name for p in self.memory().iterdir()),
+                         [".git", "MEMORY.md", "README.md"])
+
+    def test_no_hook_still_seeds_memory(self):
+        self.assertOk(self.deploy("codex", self.target("codex"), "--no-hook"))
+        self.assertTrue((self.memory() / "MEMORY.md").exists())
 
 
 class ArgumentTests(DeployCase):

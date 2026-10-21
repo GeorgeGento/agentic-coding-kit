@@ -4,13 +4,24 @@ Read before installing or upgrading any package, or trusting third-party code �
 
 ## Versions
 
-- Use the **latest stable/LTS** when installing or scaffolding — never outdated or vulnerable versions. Targets as of **June 2026** (re-check periodically):
+- Use the **latest stable/LTS that is at least 14 days old** when installing or scaffolding — never outdated or vulnerable versions. Targets as of **June 2026** (re-check periodically):
   - **Node.js 24.x LTS** (current Active LTS)
   - **Angular 22** (latest stable; v21 and v20 are in LTS support windows)
   - **MongoDB 8.0 LTS** (8.3 is the latest rapid release)
   - **Tailwind CSS 4** (latest stable)
 - New projects: latest stable for **all** dependencies from the start.
 - Prefer pinned versions + committed lockfiles for applications. Avoid floating ranges, unpinned git branches, remote install scripts, and opaque binary downloads.
+- **Release cooldown (14 days).** Never install, upgrade, override, or pin any version — direct or transitive — published less than 14 days ago. Fresh releases are the window in which compromised publishes go unnoticed. Check `npm view <pkg> time --json`; install with `npm install --before=<today-14d>` (pnpm: `minimumReleaseAge`; uv: `--exclude-newer`). If only a newer release fixes an advisory, don't install it: report "wait until <date>" and list the advisory as open. Put the cutoff date in every brief that touches dependencies.
+
+## Pre-install checks (every install/upgrade)
+
+Run these for the exact version you will install; any failure blocks the install:
+
+1. **Age** — version published ≥ 14 days ago (above).
+2. **Integrity & provenance** — `npm view <pkg>@<ver> dist.integrity dist.signatures dist.attestations`: integrity hash present; prefer versions with provenance attestations. After install, `npm audit signatures` must pass.
+3. **Diff against the previous version** — new or changed maintainers, newly added lifecycle scripts (`npm view <pkg>@<ver> scripts`), a changed `repository` URL, or an unexplained jump in size/deps are red flags: stop and report.
+4. **Lockfile** — commit it and install with `npm ci`; every `resolved` URL points at the expected registry and carries an `integrity` hash.
+5. **Advisories** — `npm audit` clean (see below).
 
 ## Vulnerabilities are a blocker
 
@@ -32,7 +43,13 @@ Before installing any package, verify **all** of:
 
 Red flags that force a reject: typosquat-looking name, single author with no org, <50 stars, last publish >2 years ago, "no fix available" advisory, license ambiguity.
 
-When you propose a package, state one line: weekly downloads, last release date, stars, advisories. (Example: prefer `exceljs` over `xlsx`, which has unfixed ReDoS + prototype-pollution advisories marked "no fix available".)
+Extra rules when **adding or recommending a new direct dependency**:
+
+- **Ask before adding.** Propose it with the one-line summary below and say why stdlib, existing deps, or a few lines of own code won't do. Never add one silently.
+- **Established packages only** — first published ≥ 6 months ago, passes every check above (downloads, stars/reviews, issue health, maintenance, advisories), and ≥ 1.0 for anything on a core path.
+- **No install-time scripts** unless the package genuinely needs them (native builds) and you've read them.
+
+When you propose a package, state one line: weekly downloads, stars, last release date, chosen version + its publish date, provenance yes/no, install scripts yes/no, advisories. (Example: prefer `exceljs` over `xlsx`, which has unfixed ReDoS + prototype-pollution advisories marked "no fix available".)
 
 ## Supply-chain review (source builds & third-party agent code)
 

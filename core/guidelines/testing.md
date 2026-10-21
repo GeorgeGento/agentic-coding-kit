@@ -20,6 +20,8 @@ Write as many tests as needed to cover **every realistic scenario** — driven b
 
 Test **observable behavior and contracts**, not implementation details, so tests survive refactors. Don't test trivial pass-throughs or the framework itself.
 
+**Unsure what the logic should do? Ask before writing its test.** Never encode a guessed expectation — a wrong test locks in a bug. Batch these questions (structured prompt if the harness has one) rather than stopping per test.
+
 ## Test levels (testing pyramid)
 
 - **Unit** — pure logic, services, utilities, pipes. Fast, isolated, the bulk of the suite.
@@ -35,6 +37,9 @@ Many unit, fewer integration, fewest E2E.
 - **Name by behavior** ("returns 401 when token missing"); arrange–act–assert; keep each test focused.
 - **Realistic fake data only** — never real PII or production data in fixtures (see [security](security-privacy-logging.md)).
 - Run the suite before pushing; never push failing tests (see [git-and-versioning](git-and-versioning.md)).
+- **Run narrow while iterating.** Only the specs/package you touched, with a path filter and low worker count (e.g. jest `--maxWorkers=1`). In a monorepo, build/typecheck only the affected project(s) — never `run-many --all` or every package's suite in one command. Run the full suite **once**, at the end of the task.
+- **Full suite before commit (user may skip).** When the user asks to commit, first prompt them (structured question if the harness has one): run the full suite now (recommended) or skip. If skipped, say so in the commit report.
+- **Baseline before blaming.** When a suite fails, check whether the failure already exists on HEAD (clean checkout via `git worktree add <tmp> HEAD`, never `git stash`) and report which failures pre-exist. Pre-existing failures say nothing about your change.
 - Match the project's existing test framework — don't introduce a second one.
 
 ## Stack tooling

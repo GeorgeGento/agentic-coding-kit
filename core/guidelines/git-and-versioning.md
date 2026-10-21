@@ -5,7 +5,7 @@ Read for git, commits, versioning, `.env`, deployment, and remote servers.
 ## Commit & push policy
 
 - **Never `git commit` or `git push` unless the user explicitly asks in that message.** Stage, branch, set/adjust remotes, and prepare freely — the commit is theirs to make.
-- When the user does ask to commit: inspect the staged diff first and verify no secrets, PII, build artifacts, or uploads are staged.
+- When the user does ask to commit: first offer the full test suite (recommended; the user may skip — see [testing](testing.md)), then inspect the staged diff and verify no secrets, PII, build artifacts, or uploads are staged.
 - **Never `git add -A` or `git add .`** — stage specific files by name.
 - Keep commits small, reviewable, and scoped to one feature/fix. Don't mix refactors, formatting, dependency bumps, and feature work.
 - Don't add AI attribution / `Co-Authored-By` unless the user asks for it.

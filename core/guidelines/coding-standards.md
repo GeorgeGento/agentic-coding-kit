@@ -1,6 +1,6 @@
 # Coding Standards
 
-General, language-agnostic standards for writing and editing code. Read this before any code change. Framework-specific rules live in [`angular-frontend.md`](angular-frontend.md) and [`backend-nodejs.md`](backend-nodejs.md).
+General, language-agnostic standards for writing and editing code. Read this before any code change. Language-specific rules live in [`languages/`](languages/README.md) (index per language); framework-specific rules in [`angular-frontend.md`](angular-frontend.md) and [`backend-nodejs.md`](backend-nodejs.md).
 
 ## Core principles
 
@@ -9,24 +9,15 @@ General, language-agnostic standards for writing and editing code. Read this bef
 - **Long-term maintainability** outweighs short-term convenience. Prefer the design that will still make sense in a year.
 - **Single Responsibility.** Each function, class, and component has one reason to change. Split large units into smaller composable ones.
 - **Immutability by default.** Don't mutate inputs, props, or shared state in place — create new objects/arrays and assign. (Framework specifics, e.g. Angular signals, in the frontend guide.)
+- **Errors at boundaries only.** Validate and handle errors where untrusted data enters (API edges, I/O, user input). Don't wrap internal calls in defensive `try/catch` "just in case".
+- **Shared packages hold only what is shared.** A symbol goes in a shared/common package only when 2+ consumers use it; single-consumer types and constants stay local to that package.
 
 ## Naming & clarity
 
 - **Meaningful, self-documenting names.** A good identifier beats a comment.
-- **No magic numbers or strings.** Hoist them to named constants or enums.
+- **Field/property names camelCase; string constant values kebab-case** (statuses, types, modes — e.g. `completionMode: 'required-only'`). The project's existing convention wins.
+- **No magic numbers or strings.** Hoist them to named constants (in JS/TS: `as const` objects, see [javascript-typescript](languages/javascript-typescript.md)).
 - Prefer clear code over clever code. Optimise for the next reader.
-
-## TypeScript standards
-
-- **`strict: true`.** No `any` — use `unknown` + narrowing, or a proper union/generic. If `any` is truly unavoidable, isolate and comment why.
-- **Explicit return types** on every exported function, method, and `computed()`.
-- **No `as any` / `as unknown as X`** to silence the compiler — fix the underlying type.
-- **Errors at boundaries only.** Validate and handle errors where untrusted data enters (API edges, I/O, user input). Don't wrap internal calls in defensive `try/catch` "just in case".
-
-## Documentation (JSDoc)
-
-- **JSDoc every exported JS/TS function** with an `@example` block — **unless** the name is self-explanatory from its signature (e.g. `isEmpty(arr)`, `toKebabCase(str)`). When in doubt, add it.
-- JSDoc explains **why / how to use**, not what the code literally does.
 
 ## Comments
 
@@ -48,10 +39,17 @@ When grouping imports, **use the highest available barrel** (`from './enums'`, n
 
 Surface findings explicitly: list what you found, classify by severity, fix the high-priority ones or get a steer before bulk-changing.
 
+## Porting & migrations
+
+- **Port, don't reinvent.** When moving a feature to a new stack/codebase, start from the existing implementation: keep its UI and behavior, and change only the wiring (imports, providers, types). Write something new only when the user agrees the old one shouldn't carry over.
+- **The target contract is the source of truth.** Before mapping a field, verify the target backend actually emits it (schema/DTO/mapper). A field the API never sends is dead code — don't add types for it. If something needed is missing from the contract, stop and ask.
+
 ## Throwaway & helper scripts
 
 - Write codemods, one-off migration scripts, and mass-edit helpers to the **active project root** (so they show up in git status and the user can review them) — not `/tmp` or `$HOME`.
 - **Delete the script once the task is done**, before reporting complete. Never leave stray scripts scattered around.
+- **Scripted rewrites of data/config files** (JSON/YAML form definitions, settings, schema setups, seeds) need the user's approval per case: prompt first, offering individual reviewable edits as the alternative. Read-only scripts that scan or verify such files are always fine.
+- **All generated output in one git-ignored folder.** Test results, Playwright reports/traces, screenshots, coverage, logs → `.output/<tool>/` at the repo root (or the project's existing convention). Never create ad-hoc output dirs. Ensure `.output/` and `.team/` are in `.gitignore` before the first run that writes there; never commit generated output.
 - Pure scratch files that the user never needs to see may use the session scratchpad instead.
 
 ## Before you call it done

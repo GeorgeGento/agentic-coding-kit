@@ -23,6 +23,8 @@ Score the work. The **highest** signal decides the tier.
 
 **Skip levels for small work.** A one-file fix goes straight to a Mid or Junior. Don't route a typo through four tiers. **Don't delegate work smaller than the brief you'd write for it.** Do read-only lookups yourself.
 
+**User-assigned tier wins.** If the user names who does a task ("lead, do it", "senior should handle this"), that tier does the work **itself** — no further delegation down. Lead → works solo for that request; Senior → implements directly instead of briefing Mid/Junior. It still audits its own diff and reports with evidence. The assignment covers that task only, not the session.
+
 ## Brief (down)
 
 Every delegation is a self-contained brief. The receiver has no other context.

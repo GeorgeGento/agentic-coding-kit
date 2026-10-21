@@ -15,6 +15,7 @@ One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows
 | --- | --- |
 | `core/rules.md` | Global always-on rules + the "when to read what" router. Rendered as `CLAUDE.md` / `AGENTS.md` |
 | `core/guidelines/` | Topic rules: coding-standards, workflow, testing, **performance** (these 4 load every session), plus git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, ux-ui-seo (on demand) |
+| `core/guidelines/languages/` | Language-specific rules (on demand): `README.md` index → one file per language (`javascript-typescript.md`, …) |
 | `core/roles/` | `lead` (your main session, loads every session) and `senior` / `mid` / `junior` (rendered as subagents) |
 | `core/protocols/` | `hierarchy.md` (brief → report → audit → escalate; inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
 | `core/skills/` | Harness-neutral skills (`ionic-capacitor`, vendored) |
@@ -48,10 +49,15 @@ What each tool gets:
 | Tier agents | `agents/<tier>.md` (`model:`) | `agents/<tier>.toml` (`model`, `developer_instructions`) | `agents/<tier>.md` (`mode: subagent`, `model: provider/id`) |
 | Skills | `~/.claude/skills/` (+ `/setup`) | `~/.agents/skills/` | `~/.config/opencode/skills/` |
 | Heavy queue | PreToolUse hook merged into `settings.json` | instruction (agents call `heavy.py`); lock dir added to `[sandbox_workspace_write] writable_roots` in `config.toml` | `plugins/heavy-queue.js` |
+| Personal memory | `@~/.agent-memory/MEMORY.md` import (live) | "read `~/.agent-memory/MEMORY.md` at session start" line; memory dir added to `writable_roots` | same instruction line as Codex |
 
 The instructions file is always **rendered** (never symlinked). After editing `core/rules.md`, re-run the deploy. **Set the Lead's model yourself** (the main session); deploy prints where.
 
 **Profiles:** in `profiles/<name>.toml`, an empty string means the agent inherits the session model. Fill in `openai.toml` (Codex) and `local.toml` with the model ids you use.
+
+### Personal memory
+
+`~/.agent-memory/` is one tool-neutral memory folder shared by every harness and project. `MEMORY.md` is the index (`- [Title](file.md) — hook`, one line per entry); each entry is its own file. Every deploy renders the path into the tool's instructions, and **seeds `MEMORY.md` and an explainer `README.md` (from `core/memory-seed/`), each only if missing**. After that the folder is yours: deploy never overwrites, backs up, links or edits it, even with `--link`. `--dry-run` creates nothing. To sync across machines, make it a private git repo yourself (deploy prints a hint and never runs git).
 
 ## Agent hierarchy
 

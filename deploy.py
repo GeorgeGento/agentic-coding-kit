@@ -7,13 +7,17 @@ Renders core/ (rules, guidelines, roles, protocols, skills) for one harness:
                              a PreToolUse hook routing heavy commands to the queue
   codex       -> ~/.codex  : AGENTS.md (always-loaded files inlined),
                              agents/<tier>.toml, skills in ~/.agents/skills,
-                             the queue's lock dir made writable in its sandbox (config.toml)
+                             the queue's lock dir and the memory dir made writable in its
+                             sandbox (config.toml)
   opencode    -> ~/.config/opencode : AGENTS.md (inlined), agents/<tier>.md,
                              skills/, a plugin routing heavy bash commands to the queue
 
 Tier models come from profiles/<name>.toml. The heavy-command queue
 (core/bin/heavy.py) is shared by all harnesses at ~/.agent-workflows/bin/.
 Anything overwritten is backed up to <target>/.deploy-backups/ first.
+
+The user's personal memory (~/.agent-memory/, tool-neutral) is referenced from every
+harness's instructions. It is seeded once if missing and NEVER modified afterwards.
 
 Usage:
     python deploy.py                          # claude-code, profile "claude"
@@ -64,11 +68,19 @@ RETIRED_SKILLS = ("agent-orchestrator", "analyze-team", "feature-team", "impleme
                   "refactor-team", "review-team", "security-team", "test-team")
 # Shared, harness-neutral home for the heavy queue (script + lock files).
 SHARED_DIRNAME = ".agent-workflows"
+# User-owned, tool-neutral memory. Deploy seeds missing files only and never touches existing ones.
+MEMORY_DIRNAME = ".agent-memory"
+MEMORY_INDEX_FILE = "MEMORY.md"
+MEMORY_DIR_MARKER = "{{MEMORY_DIR}}"
+MEMORY_INDEX_MARKER = "{{MEMORY_INDEX}}"
+MEMORY_SEED_DIR = CORE / "memory-seed"
 HOOK_MATCHER = "Bash|PowerShell"
 OPENCODE_PLUGIN = ADAPTERS / "opencode" / "plugins" / "heavy-queue.js"
 HOOK_ID = "heavy.py\" hook"  # identifies our hook entry inside settings.json
 CODEX_SANDBOX_TABLE = "sandbox_workspace_write"
 CODEX_SANDBOX_HEADER = re.compile(rf"^\[{CODEX_SANDBOX_TABLE}\][ \t]*(#.*)?$", re.MULTILINE)
+INLINE_WRITABLE_ROOTS = re.compile(
+    r"^[ \t]*writable_roots[ \t]*=[ \t]*\[(?P<inner>[^\n\]]*)\][ \t]*(#.*)?$", re.MULTILINE)
 RELATIVE_LINK = re.compile(r"\]\((guidelines|protocols|roles)/")
 
 
@@ -150,7 +162,16 @@ def render_instructions(tool: Tool, rules: str, target: Path) -> str:
         loaded = "\n\n".join(parts)
     else:
         loaded = "\n".join(f"@{rel}" for rel in ALWAYS_LOADED)
-    return absolutize_links(rules.replace(ALWAYS_LOADED_MARKER, loaded), target)
+    memory_dir = (tool.home(target) / MEMORY_DIRNAME).as_posix()
+    if tool.inline_always_loaded:
+        memory_index = (f"**At session start, read `{memory_dir}/{MEMORY_INDEX_FILE}`**"
+                        " — the index; open individual entries on demand.")
+    else:
+        memory_index = f"@{memory_dir}/{MEMORY_INDEX_FILE}"
+    rendered = (rules.replace(ALWAYS_LOADED_MARKER, loaded)
+                     .replace(MEMORY_INDEX_MARKER, memory_index)
+                     .replace(MEMORY_DIR_MARKER, memory_dir))
+    return absolutize_links(rendered, target)
 
 
 def render_agent(tool: Tool, role_text: str, model: str, protocol_text: str,
@@ -223,6 +244,7 @@ def add_codex_writable_root(text: str, root: str) -> str | None:
 
     Returns the text unchanged if `root` is already listed, or None if the
     existing writable_roots can't be edited safely as text (left to the user).
+    A simple single-line list (`writable_roots = ["a"]`) gets `root` appended.
     Raises tomllib.TOMLDecodeError on invalid TOML.
 
     Example:
@@ -234,7 +256,7 @@ def add_codex_writable_root(text: str, root: str) -> str | None:
     if isinstance(roots, list) and root in roots:
         return text
     if roots is not None:
-        return None
+        return _append_to_inline_roots(text, root, roots)
     entry = f"writable_roots = [{json.dumps(root)}]"
     header = CODEX_SANDBOX_HEADER.search(text)
     if header:
@@ -251,6 +273,23 @@ def add_codex_writable_root(text: str, root: str) -> str | None:
     return updated if ok else None
 
 
+def _append_to_inline_roots(text: str, root: str, roots: object) -> str | None:
+    """Append `root` to a single-line `writable_roots = [...]`; None if not safely editable."""
+    matches = list(INLINE_WRITABLE_ROOTS.finditer(text))
+    if len(matches) != 1 or not isinstance(roots, list):
+        return None
+    m = matches[0]
+    inner = m.group("inner").rstrip().rstrip(",").rstrip()
+    items = f"{inner}, {json.dumps(root)}" if inner.strip() else json.dumps(root)
+    updated = f"{text[:m.start('inner')]}{items}{text[m.end('inner'):]}"
+    # Verified by re-parsing: comments, odd quoting or other tables can fool the regex.
+    try:
+        ok = tomllib.loads(updated)[CODEX_SANDBOX_TABLE]["writable_roots"] == [*roots, root]
+    except (tomllib.TOMLDecodeError, KeyError, TypeError):
+        ok = False
+    return updated if ok else None
+
+
 class Deployer:
     def __init__(self, tool: Tool, target: Path, *, profile: str, link: bool,
                  dry_run: bool, hook: bool, stamp: str) -> None:
@@ -262,6 +301,7 @@ class Deployer:
         self.hook = hook
         self.stamp = stamp
         self.shared = tool.home(target) / SHARED_DIRNAME
+        self.memory = tool.home(target) / MEMORY_DIRNAME
         self.steps = 0
 
     def log(self, msg: str) -> None:
@@ -376,33 +416,58 @@ class Deployer:
             shutil.copy2(settings_path, bak_dir / f"settings.json.bak-{self.stamp}")
         self._write_settings(settings_path, merged)
 
+    def deploy_memory(self) -> None:
+        """Seed each missing file from core/memory-seed/; existing files are never touched.
+
+        Always a real copy (never a symlink, even with --link): the folder is user-owned.
+        """
+        seeded = False
+        for src in sorted(p for p in MEMORY_SEED_DIR.iterdir() if p.is_file()):
+            dest = self.memory / src.name
+            if dest.exists() or dest.is_symlink():
+                continue
+            seeded = True
+            if not self.dry:
+                self.memory.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, dest)
+            self.log(f"seed    {dest}")
+        if not seeded:
+            self.log(f"ok      {self.memory} (user-owned, untouched)")
+        if not (self.memory / ".git").exists():
+            self.log(f"hint    make {self.memory} a private git repo to sync memory across "
+                     "machines (git init, add a private remote); deploy never runs git")
+
     def deploy_sandbox_root(self) -> None:
-        """Let Codex's workspace-write sandbox write the queue's lock files."""
-        lock_dir = self.shared / "heavy"
+        """Let Codex's workspace-write sandbox write the queue's lock files and the memory dir."""
         config_path = self.target / "config.toml"
         text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
-        try:
-            updated = add_codex_writable_root(text, lock_dir.as_posix())
-        except tomllib.TOMLDecodeError as exc:
-            self.log(f"! {config_path} is not valid TOML ({exc}); sandbox root NOT added")
-            return
         if not self.dry:
-            # The sandbox can't create it later: its parent isn't writable there.
-            lock_dir.mkdir(parents=True, exist_ok=True)
-        if updated is None:
-            self.log(f"! {config_path}: add {lock_dir.as_posix()!r} to "
-                     f"[{CODEX_SANDBOX_TABLE}] writable_roots yourself")
-        elif updated == text:
-            self.log(f"ok      {config_path} (queue lock dir already writable)")
-        else:
-            if config_path.exists() and not self.dry:
-                bak_dir = self.target / ".deploy-backups"
-                bak_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(config_path, bak_dir / f"config.toml.bak-{self.stamp}")
-            if not self.dry:
-                config_path.parent.mkdir(parents=True, exist_ok=True)
-                config_path.write_text(updated, encoding="utf-8")
-            self.log(f"sandbox {config_path} (writable_roots += {lock_dir.as_posix()})")
+            # The sandbox can't create these later: their parents aren't writable there.
+            for root in (self.shared / "heavy", self.memory):
+                root.mkdir(parents=True, exist_ok=True)
+        updated = text
+        for root in (self.shared / "heavy", self.memory):
+            try:
+                step = add_codex_writable_root(updated, root.as_posix())
+            except tomllib.TOMLDecodeError as exc:
+                self.log(f"! {config_path} is not valid TOML ({exc}); sandbox roots NOT added")
+                return
+            if step is None:
+                self.log(f"! {config_path}: add {root.as_posix()!r} to "
+                         f"[{CODEX_SANDBOX_TABLE}] writable_roots yourself")
+            else:
+                updated = step
+        if updated == text:
+            self.log(f"ok      {config_path} (queue lock dir and memory dir already writable)")
+            return
+        if config_path.exists() and not self.dry:
+            bak_dir = self.target / ".deploy-backups"
+            bak_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(config_path, bak_dir / f"config.toml.bak-{self.stamp}")
+        if not self.dry:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(updated, encoding="utf-8")
+        self.log(f"sandbox {config_path} (writable_roots updated)")
 
     def _write_settings(self, path: Path, settings: dict) -> None:
         if not self.dry:
@@ -420,6 +485,7 @@ class Deployer:
         self.deploy_agents(models)
         self.deploy_skills()
         self.deploy_heavy()
+        self.deploy_memory()
         if self.hook and self.tool.hook == "settings":
             self.deploy_hook()
         elif self.hook and self.tool.hook == "plugin":

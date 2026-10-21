@@ -12,9 +12,9 @@ Owner: **Senior**. Phases, with state carried in `.team/`:
 1. **Architect**: run *analyze* scoped to the areas the feature touches: patterns, extension points, constraints.
 2. **Plan + GATE**: Senior writes `.team/plan.md` (design, tasks with `depends_on` and a tier each, acceptance criteria, data sizes and indexes, risks). The Lead presents it and **stops for approval**. Only an explicit "go end-to-end unattended" skips the gate.
 3. **Build**: run *implement* from the plan.
-4. **Check**: run *review* and *security* over the diff, in parallel. A blocker loops back to build and then re-check.
+4. **Check (opt-in, recommended)**: prompt the user (structured question if the harness has one) to run independent auditors over the diff, recommending yes. If accepted, run in parallel: *review* (correctness + regressions in existing behaviour), *security*, and **release readiness** (migrations, env/config changes, deploy order, every change to existing behaviour). A blocker loops back to build and then re-check; don't call it ready until all three are clean. If skipped, say so in the report.
 5. **Cover**: run *test* for the new behavior.
-6. **Report**: what was built, the decisions, findings and their resolutions, test evidence, deferred items. Never commit.
+6. **Report**: what was built, the decisions, findings and their resolutions, test evidence, changes to existing behaviour and what to watch after deploy, deferred items. Never commit.
 
 ## analyze: map a codebase (read-only)
 

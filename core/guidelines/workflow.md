@@ -45,7 +45,11 @@ Make success criteria verifiable and cover them with tests — treat tests as pa
 
 ## Documentation operations
 
-- Before non-trivial work, read existing docs (`README*`, `CLAUDE.md`/`AGENTS.md`, `docs/`, `.env.example`, `CHANGELOG*`) and reconcile your plan with them. This is non-destructive discovery — never ask first. If docs conflict with code, note the discrepancy rather than trusting one silently.
+- Before non-trivial work, read existing docs (`README*`, `CLAUDE.md`/`AGENTS.md`, other agents' rule files such as `.cursor/rules/`, `.github/copilot-instructions.md`, `.windsurfrules`, `docs/`, `.env.example`, `CHANGELOG*`) and reconcile your plan with them. This is non-destructive discovery — never ask first. If docs conflict with code, note the discrepancy rather than trusting one silently.
 - Update README / About / changelog when behavior, setup, commands, env vars, or security controls change.
+- Every changelog entry has a **Changes to existing behaviour** section: each change, and what to watch after deploy (what could break, what to check). "None" is stated explicitly.
+- **Plans live in the project**: `docs/plans/<topic>-plan.md` (or the project's own convention) — never only in a home-dir or harness-internal location. Open decisions the user must answer go in a separate `<topic>-decisions.md` linked from the plan. Finished reference docs stay at the top level of `docs/`.
+- **Keep progress docs current**: when a planned item lands and passes its checks, update its plan/progress doc in the same turn (status, date, evidence).
+- **Repo markdown by default**: write specs, plans, and write-ups as markdown in the repo. Don't publish them to external page/doc services unless the user asks in that message.
 - Keep global instructions concise and high-signal. Move topic-specific rules into guideline files (as this repo does) and repeatable multi-step procedures into skills, rather than bloating `CLAUDE.md`.
 - Never put real secrets, tokens, private URLs, or production data in docs — use placeholders and synthetic examples.

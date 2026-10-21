@@ -16,6 +16,17 @@ Binding every session: coding-standards, workflow, testing, performance, and the
 
 {{ALWAYS_LOADED}}
 
+## Personal memory (global, every tool and project)
+
+The user's own memory lives in `{{MEMORY_DIR}}`. It is shared by every tool and every project, it is never inside a project or a tool's config dir, and deploys never touch it.
+
+{{MEMORY_INDEX}}
+
+- **Saving:** when something is worth remembering, prompt the user (structured question if the harness has one): **global** (about the user and how they work: preferences, corrections, habits) or **this project** (about this codebase). Recommend one. Global → one fact per file at `{{MEMORY_DIR}}/<slug>.md` with frontmatter (`name`, `description`, `type`: user | feedback | reference), plus a one-line pointer in `MEMORY.md`. Project → the tool's native project memory or the repo's docs.
+- Update an existing entry instead of adding a duplicate; delete entries that turn out wrong. If a project memory turns up in a second project, propose promoting it to global.
+- Never store secrets, tokens, or other people's PII in memory.
+- These rules override any tool default that saves every memory per project.
+
 ## When to read which file (on demand)
 
 | If the task involves… | Read first |
@@ -23,6 +34,7 @@ Binding every session: coding-standards, workflow, testing, performance, and the
 | git, commits, versioning, `.env`, deploys, remote servers | [`guidelines/git-and-versioning.md`](guidelines/git-and-versioning.md) |
 | Anything security / auth / secrets / privacy / logging | [`guidelines/security-privacy-logging.md`](guidelines/security-privacy-logging.md) |
 | Installing or upgrading packages | [`guidelines/dependencies-supply-chain.md`](guidelines/dependencies-supply-chain.md) |
+| Writing or editing code in any language (JS/TS, …) | [`guidelines/languages/README.md`](guidelines/languages/README.md), then the file for that language |
 | Angular / frontend / Tailwind | [`guidelines/angular-frontend.md`](guidelines/angular-frontend.md) |
 | Node / NestJS / API / MongoDB | [`guidelines/backend-nodejs.md`](guidelines/backend-nodejs.md) |
 | UI/UX, components, accessibility, SEO | [`guidelines/ux-ui-seo.md`](guidelines/ux-ui-seo.md) |
@@ -37,16 +49,17 @@ Binding every session: coding-standards, workflow, testing, performance, and the
 These are the non-negotiables. The guideline files expand on them; this is the part that must always be in context.
 
 - **Think before coding.** State assumptions; surface tradeoffs; if something is unclear, ask instead of guessing. When asked for a proposal or "what do you suggest?", **present the plan and wait** — do not start building until confirmed.
+- **Only an explicit go changes code or plans.** A question, a statement of fact, or an idea you float is not approval — answer it and wait. In a mixed message, act only on the imperative part; answer the rest. A finding (even a critical security one) is reported with a proposed fix, then wait for a go. Treat the user's design ideas as proposals: check prior art and the codebase, say what fits and what doesn't, and edit the plan only after explicit agreement.
 - **Simplicity first.** Write the minimum code that solves the problem. No speculative abstractions, no features beyond what was asked. If 200 lines could be 50, rewrite it.
 - **Surgical changes.** Touch only what the request requires. Match the existing style even if you'd do it differently. Don't refactor or reformat unrelated code; list anything you noticed but didn't change under **"Observed, not changed:"** at the end.
 - **Preserve comments.** Never delete or rewrite existing comments except to correct them. Add comments for non-obvious "why", never to restate the code.
 - **Destructive actions need explicit confirmation.** Never delete files, data, or code, and never rename public APIs / exported symbols / routes / DB fields, without the user asking. Reading, searching, and exploring are always free.
 - **Never wipe user/app data to test.** Treat databases, app `userData`/`%APPDATA%`/`~/.config`/`~/Library/Application Support` dirs, caches with real state, and any file you didn't create as off-limits for deletion — even as "test setup" or to prove fresh-state behavior. They hold the user's real history/state and deletion is usually irreversible (`rm -rf`, `Remove-Item -Force` skip the trash). To test fresh-state, point the app at a throwaway data dir (temp `userData`, env override, fixture path) or back the file up first — and if you truly must touch the real one, stop and ask. This rule was written after deleting a user's app DB (sync history + baseline) during boot tests.
-- **Never `git commit`/`push`/`merge`/`reset`/`rebase`/`branch -d`/tag, or any history- or remote-mutating git op,** unless the user explicitly asks **with an imperative in that message** ("commit it", "push it", "merge it", "run it", "do it"). A **question or readiness check is NOT permission** — "are we ready to commit?", "should we commit?", "can you push?", "how do I merge / delete the branch?" all mean **assess and explain, then STOP**; do not run the action. When unsure whether a phrasing authorizes the action, treat it as a question and ask. Staging, branching, and preparing the working tree are always fine; the commit/push is the user's to make. (See [git-and-versioning](guidelines/git-and-versioning.md).) This was written after committing on "are we ready to commit?" — a question, not an instruction.
+- **Never `git commit`/`push`/`merge`/`reset`/`rebase`/`branch -d`/tag, or any history- or remote-mutating git op,** unless the user explicitly asks **with an imperative in that message** ("commit it", "push it", "merge it", "run it", "do it"). A **question or readiness check is NOT permission** — "are we ready to commit?", "should we commit?", "can you push?", "how do I merge / delete the branch?" all mean **assess and explain, then STOP**; do not run the action. When unsure whether a phrasing authorizes the action, treat it as a question and ask. Staging and creating branches are always fine; the commit/push is the user's to make. Commands that hide or discard uncommitted work (`stash`, `checkout -- <path>`, `restore`, `clean`) never run silently: prompt the user first (offering a separate `git worktree` as the alternative) and wait for a yes. (See [git-and-versioning](guidelines/git-and-versioning.md).) This was written after committing on "are we ready to commit?" — a question, not an instruction.
 - **No secrets in code, logs, or output.** Never print, commit, or log credentials, tokens, or PII. (See [security](guidelines/security-privacy-logging.md).)
 - **The linter is the source of truth for style.** Run ESLint/Prettier (or the project's formatter); never argue formatting.
 - **Make it testable, and test it.** Design code so it can be tested; cover happy-path, edge, error, and security scenarios; new behavior isn't done until its tests pass. See [testing](guidelines/testing.md).
-- **Read the project's docs before non-trivial work.** `README*`, `CLAUDE.md`/`AGENTS.md`, `docs/`, `.env.example`, `CHANGELOG*`. Reconcile your plan with them before editing.
+- **Read the project's docs before non-trivial work.** `README*`, `CLAUDE.md`/`AGENTS.md`, other agents' rule files (`.cursor/rules/`, `.github/copilot-instructions.md`, `.windsurfrules`), `docs/`, `.env.example`, `CHANGELOG*`. Reconcile your plan with them before editing.
 - **Truth over agreement.** Be concise and direct. Don't reflexively validate the user as "right"; cross-check and base answers on first principles. Don't apologise reflexively.
 
 ## Heavy commands go through the queue

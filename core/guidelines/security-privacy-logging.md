@@ -47,6 +47,12 @@ Read for anything touching auth, secrets, user data, or logs. Security is a prim
 - Audit-log security-relevant writes: login/authorization failures, admin actions, data export/delete, key/secret/role changes, destructive operations.
 - Logs are rotation/retention-aware; exclude them from git (except a documented `logs/.gitkeep`). Check existing logs early when debugging runtime issues.
 
+## Scripts against real databases
+
+- **Connect through the project's own connection helper/CLI**; never open `.env*` or config files to extract credentials, URIs, or DB names.
+- **Confirm the target before every run, dry runs included:** print/read which database, server, and environment the script will hit. The same command can reach a different DB depending on machine and active project config — never assume.
+- **Dry run first**; apply only after the user reviews the dry-run output and gives a go. Treat anything named or configured as production as off-limits unless the user names it explicitly.
+
 ## Frontend security
 
 - No secrets, session/refresh tokens, or sensitive PII in `localStorage`; prefer secure cookies; encrypt local-only data if browser storage is genuinely required.
