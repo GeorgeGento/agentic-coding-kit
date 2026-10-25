@@ -1,9 +1,11 @@
-# Tier -> model mapping for opencode (`python deploy.py --tool opencode`).
+# Role -> model mapping for opencode (`python deploy.py --tool opencode`).
 # opencode model ids are `provider/model-id`. Empty string = inherit the
-# session's model. Swap in other providers (openai/..., ollama/...) per tier.
+# session's model. Swap in other providers (openai/..., ollama/...) per role.
+
+max_parallel = 1
 
 [models]
-lead = "anthropic/claude-opus-5-5"
-senior = "anthropic/claude-opus-5-5"
-mid = "anthropic/claude-sonnet-5-5"
-junior = "anthropic/claude-haiku-5-5"
+lead = "anthropic/claude-sonnet-5-5"
+executor = "anthropic/claude-sonnet-5-5"
+specialist = "anthropic/claude-sonnet-5-5"
+escalation = "anthropic/claude-opus-5-5"

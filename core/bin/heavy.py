@@ -6,6 +6,7 @@ PC does not freeze. Cheap commands are never queued. Python stdlib only.
 
 Usage:
     python heavy.py run --shell bash|powershell|sh -- "<command string>"
+    python heavy.py run --raw --shell bash -- "<command>"   # raw output, no summary
     python heavy.py run --shell powershell --from-env   # command in $env:AW_HEAVY_CMD
     python heavy.py status
     python heavy.py hook            # Claude Code PreToolUse hook (JSON on stdin)
@@ -19,6 +20,15 @@ Environment:
     AW_HEAVY_HELD      set to 1 in the child; nested `run` skips the queue
     AW_HEAVY_CMD       command for `--from-env` (avoids PowerShell 5.1 mangling
                        embedded double quotes when passing args to native exes)
+    HEAVY_RAW          set to 1 to print raw output instead of a summary
+    AW_HEAVY_LOG_DIR   full-output logs (default ~/.agent-workflows/logs/<project>/)
+    AW_SETTINGS        user settings (default ~/.agent-memory/settings.toml);
+                       `heavy_log_keep` = logs kept per project (default 20)
+
+Output: the command's full output goes to a log file and a structured summary
+(heavy_parsers.py) is printed instead: one line on success, the failures with
+file:line otherwise. The exit code is always the command's own. Nested calls
+(AW_HEAVY_HELD=1) stay raw so the outer call summarizes once.
 
 A slot is `<dir>/slot-<i>.lock`. On POSIX it is held by a workload supervisor:
 if the calling wrapper is killed, the supervisor stops its descendants before
@@ -41,6 +51,8 @@ import subprocess
 import sys
 import time
 import threading
+import hashlib
+import tomllib
 from pathlib import Path
 from typing import BinaryIO
 
@@ -56,9 +68,17 @@ ENV_MAX_WAIT = "AW_HEAVY_MAX_WAIT"
 ENV_DIR = "AW_HEAVY_DIR"
 ENV_HELD = "AW_HEAVY_HELD"
 ENV_CMD = "AW_HEAVY_CMD"
+ENV_RAW = "HEAVY_RAW"
+ENV_LOG_DIR = "AW_HEAVY_LOG_DIR"
+ENV_SETTINGS = "AW_SETTINGS"
 DEFAULT_SLOTS = 2
 DEFAULT_MAX_WAIT_SECONDS = 480
 DEFAULT_DIR = Path.home() / ".agent-workflows" / "heavy"
+DEFAULT_LOG_DIR = Path.home() / ".agent-workflows" / "logs"
+DEFAULT_SETTINGS = Path.home() / ".agent-memory" / "settings.toml"
+DEFAULT_LOG_KEEP = 20
+LOG_SLUG_CHARS = 40
+PROJECT_HASH_CHARS = 8
 POLL_INTERVAL_SECONDS = 1.0
 POLL_JITTER_SECONDS = 0.25
 NICE_INCREMENT = 10
@@ -71,6 +91,8 @@ EXIT_USAGE = 2
 EXIT_SHELL_MISSING = 127
 HOOK_TIMEOUT_MS = 600_000
 WRAPPER_MARKER = "heavy.py"
+# Exit codes produced by the queue itself: its own messages are shown raw.
+QUEUE_EXIT_CODES = (EXIT_QUEUE_BUSY, EXIT_SHELL_MISSING, EXIT_CANCELLED)
 HOOK_TOOLS = ("Bash", "PowerShell")
 
 # --- heavy command classification --------------------------------------------
@@ -84,6 +106,7 @@ HEAVY_SUBCOMMANDS = {
     "ng": frozenset({"build", "test", "e2e", "lint"}),
     "nx": frozenset({"build", "test", "lint", "run-many", "affected"}),
     "playwright": frozenset({"test"}),
+    "maestro": frozenset({"test"}),
     "docker": frozenset({"build"}),  # `docker compose build` handled in _is_heavy_tokens
     "cargo": frozenset({"build", "test", "clippy"}),
     "go": frozenset({"build", "test"}),
@@ -306,14 +329,16 @@ def _shell_argv(shell: str, command: str) -> list[str]:
     return [shell, "-c", command]
 
 
-def _spawn_controlled(action: str, shell: str, command: str) -> tuple[subprocess.Popen, int]:
+def _spawn_controlled(action: str, shell: str, command: str,
+                      out: BinaryIO | None = None) -> tuple[subprocess.Popen, int]:
     """Start a helper with a private pipe, leaving command stdin untouched. POSIX only."""
     read_fd, write_fd = os.pipe()
     env = dict(os.environ, **{ENV_CMD: command})
     try:
         child = subprocess.Popen(
             [sys.executable, str(Path(__file__).resolve()), action, shell, str(read_fd)],
-            env=env, pass_fds=(read_fd,), start_new_session=True)
+            env=env, pass_fds=(read_fd,), start_new_session=True,
+            **_output_kwargs(out))
         return child, write_fd
     except BaseException:
         os.close(write_fd)
@@ -361,11 +386,16 @@ def _finish_posix_group(child: subprocess.Popen) -> None:
         time.sleep(CHILD_POLL_SECONDS)
 
 
+def _output_kwargs(out: BinaryIO | None) -> dict:
+    """Popen kwargs sending stdout+stderr to `out`, or inheriting them when None."""
+    return {"stdout": out, "stderr": subprocess.STDOUT} if out is not None else {}
+
+
 def _run_child(shell: str, command: str, cancelled: threading.Event | None = None,
-               lock: BinaryIO | None = None) -> int:
+               lock: BinaryIO | None = None, out: BinaryIO | None = None) -> int:
     env = {k: v for k, v in os.environ.items() if k != ENV_CMD}
     env[ENV_HELD] = "1"
-    kwargs: dict = {"env": env}
+    kwargs: dict = {"env": env, **_output_kwargs(out)}
     if IS_WINDOWS:
         kwargs["creationflags"] = subprocess.BELOW_NORMAL_PRIORITY_CLASS
     else:
@@ -397,7 +427,8 @@ def _run_child(shell: str, command: str, cancelled: threading.Event | None = Non
         return child.wait()
 
 
-def _run_owned(shell: str, command: str, cancelled: threading.Event | None = None) -> int:
+def _run_owned(shell: str, command: str, cancelled: threading.Event | None = None,
+               out: BinaryIO | None = None) -> int:
     """Acquire and retain the slot: inside the supervisor on POSIX, in-process on Windows."""
     slots = _slot_count()
     max_wait = float(os.environ.get(ENV_MAX_WAIT, DEFAULT_MAX_WAIT_SECONDS))
@@ -408,7 +439,7 @@ def _run_owned(shell: str, command: str, cancelled: threading.Event | None = Non
         # E.g. a sandbox (Codex workspace-write) that can't write the lock dir:
         # running unqueued beats failing every heavy command.
         print(f"[heavy] queue unavailable ({exc}); running without a slot.", file=sys.stderr)
-        return _run_child(shell, command, cancelled)
+        return _run_child(shell, command, cancelled, out=out)
     if acquired is None:
         if cancelled is not None and cancelled.is_set():
             return EXIT_CANCELLED
@@ -423,7 +454,7 @@ def _run_owned(shell: str, command: str, cancelled: threading.Event | None = Non
     try:
         info = {"pid": os.getpid(), "command": command, "cwd": os.getcwd(), "started": time.time()}
         info_path.write_text(json.dumps(info), encoding="utf-8")
-        return _run_child(shell, command, cancelled, handle)
+        return _run_child(shell, command, cancelled, handle, out)
     finally:
         try:
             info_path.unlink(missing_ok=True)
@@ -458,12 +489,13 @@ def _supervise(shell: str, control: int) -> int:
     return _run_owned(shell, os.environ[ENV_CMD], cancelled)
 
 
-def run_heavy(shell: str, command: str) -> int:
+def run_heavy(shell: str, command: str, raw: bool = False) -> int:
     """Run `command` in `shell` once a slot is free; return its exit code.
 
     Returns 75 if no slot frees up within AW_HEAVY_MAX_WAIT seconds. If
-    AW_HEAVY_HELD=1 (nested call) the command runs immediately. If the lock
-    dir can't be created or written, it warns and runs the command unqueued.
+    AW_HEAVY_HELD=1 (nested call) the command runs immediately, with raw output.
+    If the lock dir can't be created or written, it warns and runs the command
+    unqueued. Output is summarized unless `raw` or HEAVY_RAW=1.
 
     Example:
         >>> run_heavy("sh", "exit 3")  # doctest: +SKIP
@@ -471,9 +503,93 @@ def run_heavy(shell: str, command: str) -> int:
     """
     if os.environ.get(ENV_HELD) == "1":
         return _run_child(shell, command)
+    if raw or os.environ.get(ENV_RAW) == "1":
+        return _run_queued(shell, command)
+    return _run_summarized(shell, command)
+
+
+def _run_summarized(shell: str, command: str) -> int:
+    """Run with output captured to a log, then print the structured summary."""
+    try:
+        log_path = _new_log_path(command)
+        handle = open(log_path, "wb")
+    except OSError as exc:
+        print(f"[heavy] log dir unavailable ({exc}); showing raw output.", file=sys.stderr)
+        return _run_queued(shell, command)
+    started = time.monotonic()
+    with handle:
+        code = _run_queued(shell, command, handle)
+    seconds = time.monotonic() - started
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    if code in QUEUE_EXIT_CODES:
+        _write_utf8(sys.stderr, text)  # the queue's own messages, short and already actionable
+    else:
+        _write_utf8(sys.stdout, _summary(command, text, code, seconds, log_path) + "\n")
+    _prune_logs(log_path.parent, _log_keep())
+    return code
+
+
+def _write_utf8(stream, text: str) -> None:
+    """Write UTF-8 bytes, as the tools themselves do; a cp1252 console would mangle `●`, `›`."""
+    stream.flush()
+    buffer = getattr(stream, "buffer", None)
+    if buffer is None:  # e.g. an in-memory stream in tests
+        stream.write(text)
+        return
+    buffer.write(text.encode("utf-8"))
+    buffer.flush()
+
+
+def _summary(command: str, text: str, code: int, seconds: float, log_path: Path) -> str:
+    try:
+        import heavy_parsers
+    except ImportError:  # an older deploy without the parser module: degrade to the tail
+        tail = "\n".join(text.splitlines()[-40:])
+        return f"heavy: exit {code} | log {log_path.as_posix()}\n{tail}"
+    return heavy_parsers.summarize(command, text, code, seconds, log_path)
+
+
+def _project_root(start: Path) -> Path:
+    for candidate in (start, *start.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return start
+
+
+def _new_log_path(command: str) -> Path:
+    """<log dir>/<project>-<hash>/<timestamp>-<command slug>.log (dir created)."""
+    root = _project_root(Path.cwd().resolve())
+    digest = hashlib.sha1(root.as_posix().encode("utf-8")).hexdigest()[:PROJECT_HASH_CHARS]
+    folder = Path(os.environ.get(ENV_LOG_DIR) or DEFAULT_LOG_DIR) / f"{root.name or 'root'}-{digest}"
+    folder.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^A-Za-z0-9]+", "-", command).strip("-")[:LOG_SLUG_CHARS] or "command"
+    stamp = time.strftime("%Y%m%d-%H%M%S")
+    return folder / f"{stamp}-{os.getpid()}-{slug}.log"
+
+
+def _log_keep() -> int:
+    path = Path(os.environ.get(ENV_SETTINGS) or DEFAULT_SETTINGS)
+    try:
+        value = tomllib.loads(path.read_text(encoding="utf-8")).get("heavy_log_keep")
+    except (OSError, tomllib.TOMLDecodeError):
+        value = None
+    return max(1, int(value)) if isinstance(value, int) else DEFAULT_LOG_KEEP
+
+
+def _prune_logs(folder: Path, keep: int) -> None:
+    """Delete all but the newest `keep` logs in this project's log folder."""
+    try:
+        logs = sorted(folder.glob("*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for old in logs[keep:]:
+            old.unlink(missing_ok=True)
+    except OSError:
+        pass  # pruning is best effort; a busy file is retried next run
+
+
+def _run_queued(shell: str, command: str, out: BinaryIO | None = None) -> int:
     if IS_WINDOWS:
-        return _run_owned(shell, command)
-    child, control = _spawn_controlled("_supervise", shell, command)
+        return _run_owned(shell, command, out=out)
+    child, control = _spawn_controlled("_supervise", shell, command, out)
     try:
         try:
             return child.wait()
@@ -570,7 +686,7 @@ def _hook() -> int:
 # --- CLI ----------------------------------------------------------------------
 def main(argv: list[str]) -> int:
     """CLI entry point; see module docstring."""
-    usage = ("usage: heavy.py run --shell bash|powershell|sh (-- <command> | --from-env)"
+    usage = ("usage: heavy.py run [--raw] --shell bash|powershell|sh (-- <command> | --from-env)"
              " | status | hook | wrap bash|powershell")
     if not argv:
         print(usage, file=sys.stderr)
@@ -585,14 +701,17 @@ def main(argv: list[str]) -> int:
     if action == "status":
         print("\n".join(format_status(_heavy_dir(), _slot_count())))
         return 0
+    raw = action == "run" and rest[:1] == ["--raw"]
+    if raw:
+        rest = rest[1:]
     if action == "run" and len(rest) >= 3 and rest[0] == "--shell":
         shell, command_parts = rest[1], rest[2:]
         if command_parts == ["--from-env"] and os.environ.get(ENV_CMD):
-            return run_heavy(shell, os.environ[ENV_CMD])
+            return run_heavy(shell, os.environ[ENV_CMD], raw)
         if command_parts[:1] == ["--"]:
             command_parts = command_parts[1:]
         if command_parts:
-            return run_heavy(shell, " ".join(command_parts))
+            return run_heavy(shell, " ".join(command_parts), raw)
     print(usage, file=sys.stderr)
     return EXIT_USAGE
 

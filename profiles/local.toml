@@ -1,13 +1,16 @@
-# Tier -> model mapping for local models (e.g. served via Ollama / LM Studio /
+# Role -> model mapping for local models (e.g. served via Ollama / LM Studio /
 # a LiteLLM proxy that your harness points at). Values are passed through to
 # the harness as-is, so use whatever id your server exposes.
 # Example: python deploy.py --profile local            (Claude Code via a proxy)
 #          python deploy.py --tool codex --profile local
 # Empty string = inherit the session's model. Smaller local models struggle with
-# the Senior role: keep an API model there if the local ones fail its audits.
+# the escalation role: keep an API model there if the local ones fail it.
+
+# One local model usually saturates the machine: keep agents sequential.
+max_parallel = 1
 
 [models]
 lead = ""
-senior = ""
-mid = ""
-junior = ""
+executor = ""
+specialist = ""
+escalation = ""

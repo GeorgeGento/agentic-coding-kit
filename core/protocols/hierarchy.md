@@ -1,29 +1,35 @@
 # Hierarchy Protocol
 
-How work flows through the agent hierarchy: **Lead → Senior → Mid → Junior**. It works like a small engineering org. Work flows down as briefs, results flow up as reports, and **every level audits what comes up before passing it on**. Whoever delegates a piece of work is accountable for it.
+How work flows between the **Lead** and the agents it spawns. Flat on purpose: the Lead plans and audits; an **executor** builds; **specialists** check; an **escalation** agent takes what the others can't crack. Work goes down as briefs and comes up as reports. The Lead audits everything before it reaches the user, and whoever delegates a piece of work stays accountable for it.
 
-Tiers are roles, not models. Which model fills each tier is set in a profile (`profiles/*.toml`), so this protocol works for any LLM set.
+Roles are not models. A profile (`profiles/*.toml`) or the user's settings map each role to a model, so this protocol works for any LLM set.
 
-## Tiers
+## Roles
 
-| Tier | Owns | Decides | Never |
-| --- | --- | --- | --- |
-| **Lead** | The conversation with the user, routing, final acceptance | What gets built, by whom, when to stop for the user | Writes or edits code itself |
-| **Senior** | A workstream (feature, subsystem, cross-cutting change) | Architecture, task breakdown, acceptance criteria | Hands down a task without acceptance criteria |
-| **Mid** | One task (component, endpoint, module change) incl. its tests | Implementation details within the brief | Changes architecture or public contracts without escalating |
-| **Junior** | One fully specified unit (a test file, a small component, a mechanical edit) | Nothing beyond the brief | Guesses on ambiguity: it escalates |
+| Role | Owns | Never |
+| --- | --- | --- |
+| **Lead** (main session) | The conversation, the plan, small and medium code changes, the one audit, final acceptance | Delegates work smaller than the brief it would write |
+| **Executor** | One task with a tight file list, including its tests | Changes architecture or public contracts without escalating |
+| **Specialists**: `reviewer`, `security`, `tester`, `e2e`, `ui-ux` | One lens over a diff or an area; read-only unless the user opted into fixes | Builds features |
+| **Escalation** | A task an executor failed twice, or a real design/root-cause problem | Routine work |
 
-## Routing: pick the lowest tier that can own it
+## Solo by default
 
-Score the work. The **highest** signal decides the tier.
+The Lead does the work itself. It spawns an agent only when that pays:
 
-- **Senior**: ambiguous goal, touches several modules, changes a public API/schema/data model, security-sensitive, or hard to reverse.
-- **Mid**: clear goal and one module, but real design choices inside it (state shape, query design, error handling).
-- **Junior**: fully specified, local, mechanical, easy to verify (write these tests, add this field end-to-end per the pattern in X, rename Y).
+- **Parallel:** independent tasks with disjoint files that can run at the same time.
+- **Context-heavy:** large reads or long investigations that would flood the main session.
+- **Independent eyes:** specialists for review, security, test gaps, e2e flows, or UI/UX, per the [task types](task-types.md).
 
-**Skip levels for small work.** A one-file fix goes straight to a Mid or Junior. Don't route a typo through four tiers. **Don't delegate work smaller than the brief you'd write for it.** Do read-only lookups yourself.
+Don't delegate work smaller than the brief you'd write for it. Do read-only lookups yourself. If the user names who does a task, that role does it itself, for that task only.
 
-**User-assigned tier wins.** If the user names who does a task ("lead, do it", "senior should handle this"), that tier does the work **itself** — no further delegation down. Lead → works solo for that request; Senior → implements directly instead of briefing Mid/Junior. It still audits its own diff and reports with evidence. The assignment covers that task only, not the session.
+## Parallel cap
+
+`max_parallel` (in the user's `settings.toml`, else the profile) is the default number of code-changing agents at once. Read-only specialists don't count. At the first task in a session that would spawn agents, ask the user once (structured question if the harness has one): **default (N)**, **recommended for this task (M, with the reason)**, or **custom**. Keep the answer for the session. Pure Q&A sessions never see the prompt.
+
+## Plans
+
+A plan task for an executor names exact file paths (and `file:line` anchors where known), the steps, and how to verify each step, so the executor doesn't explore. Don't write the complete code into the plan; that writes it twice.
 
 ## Brief (down)
 
@@ -32,56 +38,64 @@ Every delegation is a self-contained brief. The receiver has no other context.
 ```
 GOAL:        one sentence: the outcome, not the steps
 SCOPE:       files/dirs you may touch; anything outside requires escalation
-CONTEXT:     relevant decisions, patterns to follow (file:line), guidelines that apply
-ACCEPTANCE:  verifiable checks, e.g. "tests X pass", "endpoint returns 404 on missing id", "query uses index {a:1,b:1}"
-CONSTRAINTS: performance expectations (data size), no new deps, style/conventions
-DONE MEANS:  lint + build + tests green for the slice; report in the format below
+CONTEXT:     decisions, patterns to follow (file:line), pasted excerpts, guidelines that apply
+ACCEPTANCE:  verifiable checks, e.g. "tests X pass", "endpoint returns 404 on missing id"
+CONSTRAINTS: data sizes / performance expectations, no new deps, conventions
+WORKTREE:    none (shared checkout) | agent/<task-slug>
 ```
 
-A brief without ACCEPTANCE is not a brief. If the receiver asks "which files?" or returns prose instead of a report, the brief was too thin. Fix the brief.
-
-**Size work small.** One agent per feature, screen or component, with a tight, disjoint file list. Never one agent for a whole phase. Paste the plan excerpt or bug list the agent needs instead of "read these docs". Route each audit finding to the agent that owns its files. Agents run targeted tests plus an affected smoke test; the full suite runs once per batch at the gate (see [testing](../guidelines/testing.md)).
+A brief without ACCEPTANCE is not a brief. If the receiver asks "which files?" or returns prose instead of a report, the brief was too thin: fix the brief. Paste the plan excerpt or bug list the agent needs instead of "read these docs". One agent per feature, screen, or component.
 
 ## Report (up)
 
 ```
 STATUS:      done | blocked | escalate
 CHANGES:     files touched + one line each
-EVIDENCE:    commands run and their actual output (tests, lint, build, explain plans)
+EVIDENCE:    the commands run and their heavy-queue summaries
 DEVIATIONS:  anything that differs from the brief, and why
-OPEN:        questions, risks, follow-ups; things you noticed but didn't change
+OPEN:        questions, risks, follow-ups; things noticed but not changed
 ```
 
 Never claim "tests pass" without EVIDENCE. Never report done with failing or missing tests.
 
-## Audit (the core rule)
+## Audit: once, in two stages
 
-Before you accept a child's report and pass it up, **verify it yourself, with evidence, not by trusting the report**:
+The executor self-checks with targeted tests. The Lead then audits once:
 
-1. Read the diff. Does it meet every ACCEPTANCE item and stay inside SCOPE?
-2. Re-run the relevant tests/lint/build yourself.
-3. Check against the guidelines, **performance included**: merged loops, no lookups inside loops, an index for every new query, no N+1, bounded reads.
-4. Check that it fits the architecture you (or your parent) decided.
+1. **Spec first.** Every ACCEPTANCE item met, nothing outside SCOPE. On a miss, bounce at once, without a quality pass.
+2. **Quality second.** Read the diff against the guidelines, performance included (merged loops, no lookups inside loops, an index for every new query, no N+1, bounded reads). Re-run only the targeted tests.
 
-**Reject** with a numbered defect list (what, where, why, expected), sent back to the same agent so it keeps its context. **Max 2 bounces.** Every round fixes the root cause; never a guess-and-retry loop. After that, either do it yourself (if within your tier's role) or escalate up with what was tried. Once you accept, the work is yours. Your parent will audit it as your output.
+**Reject** with a numbered defect list (what, where, why, expected), sent to the **same** agent so it keeps its context. **Max 2 bounces**, each fixing the root cause. After that, do it yourself or hand it to the escalation agent with what was tried.
+
+**Specialist findings:** check each against the code before acting. Confirm or refute it, drop duplicates, and push back on wrong ones. Never apply findings blindly.
 
 ## Escalation (up)
 
-Stop and report `STATUS: escalate` instead of guessing when you hit any of these:
+An agent stops with `STATUS: escalate` instead of guessing when:
 - the brief is ambiguous or contradicts the code;
 - the fix needs files outside SCOPE or a contract/schema change;
 - acceptance can't be met as written;
-- you found a bigger problem than the task (security hole, data-loss risk).
+- it found a bigger problem than the task (security hole, data-loss risk).
 
-Escalating early is cheap. Guessing wrong and having it audited out two levels up is expensive.
+## Worktrees
+
+Parallel agents share one checkout with disjoint SCOPE by default. Use a git worktree (it shares one `.git`, so there's no repo copy) only when file lists overlap, the task is experimental, or agents would fight over build output or ports.
+
+The script is `python "$HOME/.agent-workflows/bin/worktrees.py"` (`python` on Windows), run from inside the repo.
+
+1. **Before creating:** at most `max_parallel` worktrees; run `worktrees.py check-disk` (exit 1 = below `min_free_disk_gb`, default 10). If disk is low, run in the main checkout or ask. Branch: `agent/<task-slug>`. Dependencies get a fresh install inside the worktree.
+2. **Baseline:** the executor runs the targeted tests once before editing and records any failures that already exist.
+3. **Apply, don't merge:** after the audit, `worktrees.py apply <path>` copies the worktree's changes (untracked files included) into the main checkout as uncommitted changes. History stays untouched; commits remain the user's.
+4. **Test in the main checkout.** On failure the worktree stays, and the rework goes to the same agent.
+5. **Clean up once green:** `worktrees.py clean` removes every worktree whose changes are verified present in the main checkout, plus its `agent/*` branch. **Standing rule:** this needs no confirmation. Never remove anything else, or any other branch, without the user's imperative.
+6. **Rejected or abandoned work:** ask the user: discard (recommended) or keep. On discard: `worktrees.py discard <path>`.
+7. **No leftovers:** a task isn't done while one of its worktrees exists. Before reporting, run `worktrees.py list` and resolve each one. A worktree is kept only by the user's explicit choice. In Claude Code a session-start hook reports leftovers from crashed sessions.
 
 ## Mechanics
 
-- **Spawning:** if your harness lets you spawn subagents, delegate directly to the tier's agent (Claude Code: `subagent_type: senior | mid | junior`). If it can't nest, add a `DELEGATE:` list of briefs (with the target tier) to your report. Your parent dispatches them and sends the results back to **you** for audit, so accountability stays with you.
-- **Continuity:** send rework, including auditors' findings, to the *same* agent that built it (Claude Code: `SendMessage` to its id), not a fresh one. Auditors (review, security, release) are always separate agents from the builder.
-- **No subagents at all** (single-agent harness or a local model without tools for it): run the tiers sequentially yourself. Plan as Senior, implement as Mid, then audit as Senior against the written acceptance criteria before reporting.
-- **Parallelism:** run independent briefs in parallel, **at most 4 code-changing agents at once** (each agent is itself a heavy process). Parallel agents that mutate code must have disjoint SCOPE or isolated worktrees.
-- **Parallel Seniors share one gate.** Each verifies its slice with targeted suites only. The Lead runs one full gate over the whole tree at the end, plus a cheap build + lint + unit check at each coordinated sync. When suites share a test DB, the Lead grants exclusive test-DB windows, and two DB-backed e2e/UI suites never run at once.
-- **Heavy commands** (tests, builds, type-checks, linters) go through the machine-wide queue: `python3 "$HOME/.agent-workflows/bin/heavy.py" run --shell bash -- "<command>"` (`python` on Windows; `--shell powershell` from PowerShell). In Claude Code a hook wraps them automatically. Exit 75 means the queue is busy: wait and retry, or run in the background. Never queue cheap commands (`grep`, `git`, reading files) or dev servers/watchers.
-- **Shared state:** for multi-agent runs, keep the plan and decisions in `.team/` (`context.md`, `plan.md`), per [team mechanics](teams.md). Multi-agent task types (feature, review, security, …) are in [task-types](task-types.md). The delegator is the single writer.
-- **Safety:** no agent at any tier commits, pushes, or deletes data without explicit user instruction relayed by the Lead.
+- **Spawning:** Claude Code: `subagent_type: executor | escalation | reviewer | security | tester | e2e | ui-ux`. If the harness can't spawn, run the roles sequentially yourself: plan, build, then audit against the written acceptance.
+- **Continuity:** rework, including auditors' findings, goes to the *same* agent (Claude Code: `SendMessage` to its id). Specialists are always separate agents from the builder.
+- **One gate.** Agents verify their slice with targeted suites. The Lead runs the full gate once at the end. When suites share a test DB, two DB-backed e2e/UI suites never run at once.
+- **Heavy commands** (tests, builds, type-checks, linters) go through the machine-wide queue, which prints a structured summary and keeps the full log on disk. Paste the summary as EVIDENCE. On failure, open the referenced `file:line` or search the log; never read the whole log back. Re-run only the failing test file. In Claude Code a hook wraps the commands automatically; elsewhere: `python3 "$HOME/.agent-workflows/bin/heavy.py" run --shell bash -- "<command>"`. Exit 75 means the queue is busy: wait and retry.
+- **Shared state** for multi-agent runs lives in `.team/` (`context.md`, `plan.md`), per [team mechanics](teams.md). The delegator is the single writer.
+- **Safety:** no agent commits, pushes, or deletes data without an explicit user instruction relayed by the Lead (the `agent/*` cleanup rule above is the only standing exception).

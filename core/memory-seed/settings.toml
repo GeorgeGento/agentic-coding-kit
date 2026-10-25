@@ -1,0 +1,23 @@
+# Your global agent-workflows defaults. User-owned: deploy reads this file but never
+# overwrites it. The setup skill asks you for each value and writes it here.
+# Anything commented out falls back to the deploy profile (profiles/*.toml).
+# Edits apply on the next `python deploy.py`.
+
+# Parallel code-changing agents by default (Pro: 1, Max: 3). The Lead still asks
+# once per session: default / recommended for the task / custom.
+# max_parallel = 1
+
+# Free disk (GB) required before an agent worktree is created.
+# min_free_disk_gb = 10
+
+# Full heavy-queue logs kept per project in ~/.agent-workflows/logs/.
+# heavy_log_keep = 20
+
+# Models per tool and role. Setting `lead` for claude-code also writes it into
+# ~/.claude/settings.json. Specialists without their own key use `specialist`.
+# [models.claude-code]
+# lead = "claude-sonnet-5-5"
+# executor = "claude-sonnet-5-5"
+# specialist = "claude-sonnet-5-5"
+# escalation = "claude-opus-5-5"
+# security = "claude-sonnet-5-5"

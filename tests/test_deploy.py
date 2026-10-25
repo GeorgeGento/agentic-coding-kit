@@ -43,26 +43,111 @@ class ClaudeCodeDeployTests(DeployCase):
     def test_renders_instructions_with_imports_and_absolute_links(self):
         self.assertOk(self.deploy("claude-code", self.target))
         text = (self.target / "CLAUDE.md").read_text(encoding="utf-8")
-        self.assertIn("@guidelines/performance.md", text)
+        self.assertIn("@guidelines/coding-standards.md", text)
         self.assertIn("@roles/lead.md", text)
+        self.assertNotIn("@guidelines/performance.md", text)  # on demand now
         self.assertNotIn("{{ALWAYS_LOADED}}", text)
+        self.assertNotIn("{{MAX_PARALLEL}}", text)
+        self.assertIn("Default `max_parallel` for this install: 1**", text)
+        self.assertIn(f"]({self.target.as_posix()}/guidelines/debugging.md)", text)
+        self.assertIn(f"]({self.target.as_posix()}/guidelines/motion-3d.md)", text)
+        self.assertIn(f"]({self.target.as_posix()}/guidelines/ui-testing-platforms.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/git-and-versioning.md)", text)
         self.assertNotIn("](guidelines/", text)
 
-    def test_renders_tier_agents_but_not_lead(self):
+    def test_renders_role_agents_with_short_protocol_but_not_lead(self):
         self.assertOk(self.deploy("claude-code", self.target))
-        senior = (self.target / "agents" / "senior.md").read_text(encoding="utf-8")
-        self.assertIn("model: claude-opus-5-5", senior)
-        self.assertIn("# Hierarchy Protocol", senior)
-        self.assertTrue(senior.startswith("---\nname: senior\n"))
+        executor = (self.target / "agents" / "executor.md").read_text(encoding="utf-8")
+        self.assertTrue(executor.startswith("---\nname: executor\n"))
+        self.assertIn("model: claude-sonnet-5-5", executor)
+        self.assertIn("# Agent Protocol", executor)
+        self.assertNotIn("# Hierarchy Protocol", executor)
+        escalation = (self.target / "agents" / "escalation.md").read_text(encoding="utf-8")
+        self.assertIn("model: claude-opus-5-5", escalation)
+        for role in deploy.SPECIALIST_ROLES:  # specialists fall back to the `specialist` model
+            text = (self.target / "agents" / f"{role}.md").read_text(encoding="utf-8")
+            self.assertIn("model: claude-sonnet-5-5", text, role)
         self.assertFalse((self.target / "agents" / "lead.md").exists())
 
-    def test_copies_core_dirs_skills_and_shared_queue(self):
+    def test_retired_tier_agents_are_backed_up_and_removed(self):
+        agents = self.target / "agents"
+        agents.mkdir(parents=True)
+        for name in ("senior", "mid", "junior"):
+            (agents / f"{name}.md").write_text("old", encoding="utf-8")
+        (agents / "electron-pro.md").write_text("user agent", encoding="utf-8")
         self.assertOk(self.deploy("claude-code", self.target))
-        for rel in ("guidelines/performance.md", "protocols/task-types.md", "roles/lead.md",
+        for name in ("senior", "mid", "junior"):
+            self.assertFalse((agents / f"{name}.md").exists(), name)
+            self.assertTrue(list((self.target / ".deploy-backups").glob(f"{name}.md.bak-*")), name)
+        self.assertTrue((agents / "electron-pro.md").exists())
+
+    def test_copies_core_dirs_skills_and_shared_scripts(self):
+        self.assertOk(self.deploy("claude-code", self.target))
+        for rel in ("guidelines/performance.md", "guidelines/debugging.md",
+                    "protocols/task-types.md", "protocols/agent-protocol.md", "roles/lead.md",
                     "skills/ionic-capacitor/SKILL.md", "skills/setup/SKILL.md", "README.md"):
             self.assertTrue((self.target / rel).exists(), rel)
-        self.assertTrue((self.home / ".agent-workflows" / "bin" / "heavy.py").exists())
+        for name in deploy.BIN_SCRIPTS:
+            self.assertTrue((self.home / ".agent-workflows" / "bin" / name).exists(), name)
+
+    def test_session_start_hook_reports_leftover_worktrees(self):
+        self.assertOk(self.deploy("claude-code", self.target))
+        self.assertOk(self.deploy("claude-code", self.target))
+        settings = json.loads((self.target / "settings.json").read_text(encoding="utf-8"))
+        entries = settings["hooks"]["SessionStart"]
+        self.assertEqual(len(entries), 1)
+        command = entries[0]["hooks"][0]["command"]
+        self.assertIn('worktrees.py" list --quiet', command)
+        self.assertNotIn("model", settings)  # no Lead model chosen in settings.toml
+
+    def write_settings(self, text):
+        memory = self.home / ".agent-memory"
+        memory.mkdir(exist_ok=True)
+        (memory / "settings.toml").write_text(text, encoding="utf-8")
+
+    def test_user_settings_override_profile_and_flag_overrides_settings(self):
+        self.write_settings('max_parallel = 3\n[models.claude-code]\n'
+                            'executor = "my-exec"\nsecurity = "my-sec"\n')
+        self.assertOk(self.deploy("claude-code", self.target))
+        agents = self.target / "agents"
+        self.assertIn("model: my-exec", (agents / "executor.md").read_text(encoding="utf-8"))
+        self.assertIn("model: my-sec", (agents / "security.md").read_text(encoding="utf-8"))
+        self.assertIn("model: claude-sonnet-5-5", (agents / "reviewer.md").read_text(encoding="utf-8"))
+        claude_md = (self.target / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn("for this install: 3**", claude_md)
+        self.assertOk(self.deploy("claude-code", self.target, "--max-parallel", "2"))
+        self.assertIn("for this install: 2**",
+                      (self.target / "CLAUDE.md").read_text(encoding="utf-8"))
+
+    def test_chosen_lead_model_is_written_next_to_other_settings(self):
+        self.target.mkdir(parents=True)
+        (self.target / "settings.json").write_text(
+            json.dumps({"model": "old", "theme": "dark"}), encoding="utf-8")
+        self.write_settings('[models.claude-code]\nlead = "claude-opus-5-5"\n')
+        result = self.deploy("claude-code", self.target)
+        self.assertOk(result)
+        settings = json.loads((self.target / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(settings["model"], "claude-opus-5-5")
+        self.assertEqual(settings["theme"], "dark")
+        self.assertIn("PreToolUse", settings["hooks"])
+        self.assertNotIn("Reminder: set the Lead", result.stdout)
+
+    def test_missing_or_invalid_settings_fall_back_to_profile(self):
+        result = self.deploy("claude-code", self.target)
+        self.assertOk(result)
+        self.assertIn("run /setup to choose", result.stdout)
+        self.write_settings("not = [valid")
+        result = self.deploy("claude-code", self.target)
+        self.assertOk(result)
+        self.assertIn("is not valid TOML", result.stdout)
+        self.assertIn("model: claude-sonnet-5-5",
+                      (self.target / "agents" / "executor.md").read_text(encoding="utf-8"))
+
+    def test_existing_settings_toml_is_never_overwritten(self):
+        self.write_settings("max_parallel = 2\n")
+        self.assertOk(self.deploy("claude-code", self.target))
+        self.assertEqual((self.home / ".agent-memory" / "settings.toml").read_text(encoding="utf-8"),
+                         "max_parallel = 2\n")
 
     def test_hook_merges_into_existing_settings_idempotently(self):
         self.target.mkdir(parents=True)
@@ -128,27 +213,30 @@ class CodexDeployTests(DeployCase):
     def test_agents_md_inlines_always_loaded_files(self):
         self.assertOk(self.deploy("codex", self.target))
         text = (self.target / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("# Performance", text)
+        self.assertIn("# Coding Standards", text)
         self.assertIn("# Role: Lead", text)
+        self.assertNotIn("# Performance", text)  # on demand now
         self.assertNotIn("@guidelines/", text)
         self.assertNotIn("name: lead", text)  # frontmatter stripped when inlining
 
     def test_agents_are_valid_toml_and_inherit_model_when_profile_empty(self):
         self.assertOk(self.deploy("codex", self.target, "--profile", "local"))
-        agent = tomllib.loads((self.target / "agents" / "mid.toml").read_text(encoding="utf-8"))
-        self.assertEqual(agent["name"], "mid")
+        agent = tomllib.loads((self.target / "agents" / "executor.toml").read_text(encoding="utf-8"))
+        self.assertEqual(agent["name"], "executor")
         self.assertTrue(agent["description"])
-        self.assertIn("# Hierarchy Protocol", agent["developer_instructions"])
+        self.assertIn("# Agent Protocol", agent["developer_instructions"])
         self.assertNotIn("model", agent)
 
     def test_default_profile_renders_models_and_reminds_about_lead(self):
         result = self.deploy("codex", self.target)
         self.assertOk(result)
         models = deploy.load_profile("openai")
-        for tier in ("senior", "mid", "junior"):
+        expected = {"executor": models["executor"], "escalation": models["escalation"],
+                    **{role: models["specialist"] for role in deploy.SPECIALIST_ROLES}}
+        for role, model in expected.items():
             agent = tomllib.loads(
-                (self.target / "agents" / f"{tier}.toml").read_text(encoding="utf-8"))
-            self.assertEqual(agent["model"], models[tier])
+                (self.target / "agents" / f"{role}.toml").read_text(encoding="utf-8"))
+            self.assertEqual(agent["model"], model, role)
         self.assertFalse((self.target / "agents" / "lead.toml").exists())
         self.assertIn(f"set the Lead (main session) model to {models['lead']}", result.stdout)
 
@@ -275,8 +363,8 @@ class OpencodeDeployTests(DeployCase):
 
     def test_subagents_use_opencode_frontmatter(self):
         self.assertOk(self.deploy("opencode", self.target))
-        mid = (self.target / "agents" / "mid.md").read_text(encoding="utf-8")
-        front = mid.split("---")[1]
+        executor = (self.target / "agents" / "executor.md").read_text(encoding="utf-8")
+        front = executor.split("---")[1]
         self.assertIn("mode: subagent", front)
         self.assertIn("model: anthropic/claude-sonnet-5-5", front)
         self.assertNotIn("name:", front)
@@ -328,10 +416,10 @@ class MemoryTests(DeployCase):
     def test_fresh_home_gets_seed_files(self):
         result = self.deploy("claude-code", self.target("claude-code"))
         self.assertOk(result)
-        for name in ("MEMORY.md", "README.md"):
+        for name in ("MEMORY.md", "README.md", "settings.toml"):
             self.assertEqual((self.memory() / name).read_bytes(),
                              (deploy.MEMORY_SEED_DIR / name).read_bytes())
-        self.assertEqual(result.stdout.count("seed    "), 2)
+        self.assertEqual(result.stdout.count("seed    "), 3)
 
     def test_only_missing_seed_file_is_created(self):
         self.memory().mkdir()
@@ -342,7 +430,7 @@ class MemoryTests(DeployCase):
         self.assertEqual(index.read_bytes(), b"mine\n")
         self.assertEqual((self.memory() / "README.md").read_bytes(),
                          (deploy.MEMORY_SEED_DIR / "README.md").read_bytes())
-        self.assertEqual(result.stdout.count("seed    "), 1)
+        self.assertEqual(result.stdout.count("seed    "), 2)
 
     def test_link_mode_seeds_real_files(self):
         self.assertOk(self.deploy("claude-code", self.target("claude-code"), "--link"))
@@ -358,6 +446,7 @@ class MemoryTests(DeployCase):
         entry.write_bytes(b"---\nname: x\n---\nbody\n")
         readme = self.memory() / "README.md"
         readme.write_bytes(b"my readme\n")
+        (self.memory() / "settings.toml").write_bytes(b"max_parallel = 2\n")
         before = (index.read_bytes(), entry.read_bytes(), readme.read_bytes())
         for extra in ((), ("--link",)):
             for tool in self.TOOL_TARGETS:
@@ -367,7 +456,7 @@ class MemoryTests(DeployCase):
                 self.assertFalse(index.is_symlink())
         self.assertEqual((index.read_bytes(), entry.read_bytes(), readme.read_bytes()), before)
         self.assertEqual(sorted(p.name for p in self.memory().iterdir()),
-                         ["MEMORY.md", "README.md", "likes-tabs.md"])
+                         ["MEMORY.md", "README.md", "likes-tabs.md", "settings.toml"])
         for tool in self.TOOL_TARGETS:
             baks = self.target(tool) / ".deploy-backups"
             if baks.exists():
@@ -385,7 +474,7 @@ class MemoryTests(DeployCase):
         result = self.deploy("claude-code", self.target("claude-code"))
         self.assertNotIn("private git repo", result.stdout)
         self.assertEqual(sorted(p.name for p in self.memory().iterdir()),
-                         [".git", "MEMORY.md", "README.md"])
+                         [".git", "MEMORY.md", "README.md", "settings.toml"])
 
     def test_no_hook_still_seeds_memory(self):
         self.assertOk(self.deploy("codex", self.target("codex"), "--no-hook"))
@@ -401,6 +490,42 @@ class ArgumentTests(DeployCase):
     def test_refuses_to_deploy_into_repo(self):
         result = self.deploy("claude-code", REPO / "sub")
         self.assertEqual(result.returncode, 1)
+
+    def test_max_parallel_below_one_is_rejected(self):
+        result = self.deploy("claude-code", self.home / ".claude", "--max-parallel", "0")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("--max-parallel must be at least 1", result.stdout)
+
+
+class ResolveSettingsTests(unittest.TestCase):
+    PROFILE = {"max_parallel": 1, "models": {"lead": "p-lead", "executor": "p-exec",
+                                             "specialist": "p-spec"}}
+
+    def test_profile_only(self):
+        settings = deploy.resolve_settings("claude-code", self.PROFILE, {}, None)
+        self.assertEqual(settings.max_parallel, 1)
+        self.assertEqual(settings.models["reviewer"], "p-spec")
+        self.assertFalse(settings.lead_chosen)
+
+    def test_user_settings_per_tool_and_flag_precedence(self):
+        user = {"max_parallel": 3, "models": {"claude-code": {"lead": "u-lead", "e2e": "u-e2e"},
+                                              "codex": {"executor": "codex-only"}}}
+        settings = deploy.resolve_settings("claude-code", self.PROFILE, user, 2)
+        self.assertEqual(settings.max_parallel, 2)
+        self.assertEqual(settings.models["lead"], "u-lead")
+        self.assertEqual(settings.models["executor"], "p-exec")  # codex entry ignored
+        self.assertEqual(settings.models["e2e"], "u-e2e")
+        self.assertEqual(settings.models["tester"], "p-spec")
+        self.assertTrue(settings.lead_chosen)
+
+    def test_inputs_are_not_mutated(self):
+        profile = json.loads(json.dumps(self.PROFILE))
+        deploy.resolve_settings("claude-code", profile, {}, None)
+        self.assertEqual(profile, self.PROFILE)
+
+    def test_default_when_nothing_sets_max_parallel(self):
+        settings = deploy.resolve_settings("claude-code", {"models": {}}, {}, None)
+        self.assertEqual(settings.max_parallel, deploy.DEFAULT_MAX_PARALLEL)
 
 
 class MergeHookTests(unittest.TestCase):

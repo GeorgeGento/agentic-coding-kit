@@ -49,7 +49,7 @@ Surface findings explicitly: list what you found, classify by severity, fix the 
 - Write codemods, one-off migration scripts, and mass-edit helpers to the **active project root** (so they show up in git status and the user can review them) — not `/tmp` or `$HOME`.
 - **Delete the script once the task is done**, before reporting complete. Never leave stray scripts scattered around.
 - **Scripted rewrites of data/config files** (JSON/YAML form definitions, settings, schema setups, seeds) need the user's approval per case: prompt first, offering individual reviewable edits as the alternative. Read-only scripts that scan or verify such files are always fine.
-- **All generated output in one git-ignored folder.** Test results, Playwright reports/traces, screenshots, coverage, logs → `.output/<tool>/` at the repo root (or the project's existing convention). Never create ad-hoc output dirs. Ensure `.output/` and `.team/` are in `.gitignore` before the first run that writes there; never commit generated output.
+- **All generated output in one git-ignored folder.** Test results, Playwright reports/traces, screenshots, coverage, logs → `.output/<tool>/` at the repo root (or the project's existing convention). Never create ad-hoc output dirs. Ensure `.output/` and `.team/` are in `.gitignore` before the first run that writes there; never commit generated output. Exception: the heavy queue keeps its full command logs centrally in `~/.agent-workflows/logs/<project>/`, outside every repo.
 - Pure scratch files that the user never needs to see may use the session scratchpad instead.
 
 ## Before you call it done

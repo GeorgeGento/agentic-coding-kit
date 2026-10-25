@@ -1,11 +1,18 @@
-# Tier -> model mapping for Claude Code. Copy this file to make another profile
+# Role -> model mapping for Claude Code. Copy this file to make another profile
 # (e.g. profiles/local.toml) and deploy with `python deploy.py --profile local`.
 # Values are whatever the harness accepts as a model id/alias.
+# The user's ~/.agent-memory/settings.toml overrides these per role (setup writes it).
+
+# Default number of parallel code-changing agents (Pro: 1, Max: 3). The Lead still
+# asks once per session; `--max-parallel N` and settings.toml override this.
+max_parallel = 1
 
 [models]
-# The Lead is your main session — set it via /config or settings.json "model".
-# deploy.py only prints a reminder for it; it is not rendered as a subagent.
-lead = "claude-opus-5-5"
-senior = "claude-opus-5-5"
-mid = "claude-sonnet-5-5"
-junior = "claude-haiku-5-5"
+# The Lead is your main session. deploy.py writes it into settings.json only when
+# settings.toml names it; otherwise it prints a reminder. Switch to Opus via /model
+# for hard design work.
+lead = "claude-sonnet-5-5"
+executor = "claude-sonnet-5-5"
+# Default for reviewer, security, tester, e2e, ui-ux; add a key per role to override.
+specialist = "claude-sonnet-5-5"
+escalation = "claude-opus-5-5"

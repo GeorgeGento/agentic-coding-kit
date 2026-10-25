@@ -60,6 +60,13 @@ CATALOG: dict[str, dict] = {
         path="skills/webapp-testing", trust="official - Anthropic", group="UI/UX", default=True),
     "theme-factory": dict(repo="https://github.com/anthropics/skills",
         path="skills/theme-factory", trust="official - Anthropic", group="UI/UX", default=False),
+    # --- Motion / 3D (bundles: several skills each; each description costs tokens every
+    # session, so prefer installing into the project that uses them: --target <proj>/.claude/skills)
+    "gsap-skills": dict(repo="https://github.com/greensock/gsap-skills", path="skills", bundle=True,
+        trust="official - GreenSock (MIT, 8 skills)", group="Motion/3D", default=False),
+    "threejs-skills": dict(repo="https://github.com/CloudAI-X/threejs-skills", path="skills",
+        bundle=True, trust="community - CloudAI-X (MIT, 13 skills) - review first",
+        group="Motion/3D", default=False),
     # --- TypeScript / JavaScript ---
     "typescript-pro": dict(repo=JEFFALLAN,
         path="skills/typescript-pro", trust="community - review first", group="TypeScript/JS", default=True),
@@ -149,7 +156,7 @@ def print_catalog() -> None:
                 print(f"    {mark} {name:24} {kind:5}  {_source(meta):36} {meta['trust']}")
         print()
     print("Bundled in the config repo (installed by deploy.py, not listed above):")
-    print("      setup, ionic-capacitor, and the senior/mid/junior tier agents")
+    print("      setup, ionic-capacitor, and the executor/escalation/specialist role agents")
 
 
 def install_git_item(name: str, meta: dict, target_dir: Path, dry: bool) -> bool:
@@ -172,6 +179,8 @@ def install_git_item(name: str, meta: dict, target_dir: Path, dry: bool) -> bool
             return False
 
         dest_root.mkdir(parents=True, exist_ok=True)
+        if meta.get("bundle"):
+            return _install_bundle(src, tmp, dest_root)
         dest = dest_root / (f"{name}.md" if is_agent else name)
         _backup(dest)
         if src.is_dir():
@@ -191,6 +200,23 @@ def install_git_item(name: str, meta: dict, target_dir: Path, dry: bool) -> bool
         return False
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _install_bundle(src: Path, repo_root: Path, dest_root: Path) -> bool:
+    """Copy every child folder of `src` that has a SKILL.md as its own skill."""
+    skills = sorted(child for child in src.iterdir() if (child / "SKILL.md").is_file())
+    if not skills:
+        print(f"    ! no skill folders found under {src.name}/")
+        return False
+    lic = next((repo_root / n for n in LICENSE_NAMES if (repo_root / n).exists()), None)
+    for child in skills:
+        dest = dest_root / child.name
+        _backup(dest)
+        shutil.copytree(child, dest)
+        if lic:
+            shutil.copy2(lic, dest / f"UPSTREAM-{lic.name}")
+    print(f"    {len(skills)} skills: {', '.join(c.name for c in skills)}")
+    return True
 
 
 def install_pip_item(name: str, meta: dict, dry: bool) -> bool:

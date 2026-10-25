@@ -4,8 +4,9 @@ A portable setup for AI coding agents (**Claude Code, Codex, opencode**, and loc
 
 - a lean set of global rules;
 - topic guidelines that load **on demand**;
-- an **agent hierarchy** (Lead → Senior → Mid → Junior) in which every level audits the level below;
-- a machine-wide **queue for heavy commands**, so parallel agents don't freeze the PC.
+- a flat **agent setup**: the Lead plans and builds, executors take parallel work, specialists check it, and the Lead audits once;
+- a machine-wide **queue for heavy commands**, so parallel agents don't freeze the PC, which also turns raw test/build output into short summaries;
+- **agent worktree cleanup**, so isolated agent work never piles up on disk.
 
 One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows, macOS and Linux.
 
@@ -14,16 +15,17 @@ One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows
 | Path | What |
 | --- | --- |
 | `core/rules.md` | Global always-on rules + the "when to read what" router. Rendered as `CLAUDE.md` / `AGENTS.md` |
-| `core/guidelines/` | Topic rules: coding-standards, workflow, testing, **performance** (these 4 load every session), plus git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, library-design, ux-ui-seo (on demand) |
+| `core/guidelines/` | Topic rules: coding-standards (loads every session), plus workflow, testing, performance, debugging, motion-3d, ui-testing-platforms, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, library-design, ux-ui-seo (on demand; their must-dos are a checklist in `rules.md`) |
 | `core/guidelines/languages/` | Language-specific rules (on demand): `README.md` index → one file per language (`javascript-typescript.md`, …) |
-| `core/roles/` | `lead` (your main session, loads every session) and `senior` / `mid` / `junior` (rendered as subagents) |
-| `core/protocols/` | `hierarchy.md` (brief → report → audit → escalate; inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
+| `core/roles/` | `lead` (your main session, loads every session); `executor`, `escalation` and the specialists `reviewer` / `security` / `tester` / `e2e` / `ui-ux` (rendered as subagents) |
+| `core/protocols/` | `hierarchy.md` (roles, briefs, the two-stage audit, worktree lifecycle; read by the Lead) · `agent-protocol.md` (the short part inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
 | `core/skills/` | Harness-neutral skills (`ionic-capacitor`, vendored) |
-| `core/bin/heavy.py` | The heavy-command queue (Python stdlib only) |
+| `core/bin/` | `heavy.py` (heavy-command queue) + `heavy_parsers.py` (output summaries) · `worktrees.py` (agent worktree list/apply/clean). Python stdlib only |
 | `adapters/claude-code/` | Claude-only extras: the `/setup` skill |
 | `adapters/opencode/` | opencode plugin that routes heavy commands to the queue |
-| `profiles/*.toml` | Tier → model mapping: `claude`, `openai` (Codex), `opencode`, `local` |
+| `profiles/*.toml` | Role → model defaults and `max_parallel`: `claude`, `openai` (Codex), `opencode`, `local` |
 | `deploy.py` | Renders and installs everything for one tool |
+| `core/memory-seed/` | Seeded into `~/.agent-memory/` if missing: `MEMORY.md`, `README.md`, `settings.toml` |
 | `tests/` | `python -m unittest discover tests` |
 
 ## Deploy
@@ -34,7 +36,8 @@ Requires Python ≥ 3.11. Anything overwritten is backed up to `<target>/.deploy
 python deploy.py                       # Claude Code -> ~/.claude (profile: claude)
 python deploy.py --tool codex          # Codex       -> ~/.codex, skills in ~/.agents/skills (profile: openai)
 python deploy.py --tool opencode       # opencode    -> ~/.config/opencode (profile: opencode)
-python deploy.py --profile local       # any tool, different tier->model mapping
+python deploy.py --profile local       # any tool, different role->model mapping
+python deploy.py --max-parallel 3      # default parallel code-changing agents
 python deploy.py --dry-run             # preview, change nothing
 python deploy.py --link                # symlink guidelines/roles/protocols/skills (live edits)
 python deploy.py --no-hook             # skip the queue hook (Claude Code) / plugin (opencode) / sandbox root (Codex)
@@ -46,38 +49,36 @@ What each tool gets:
 | | Claude Code | Codex | opencode |
 | --- | --- | --- | --- |
 | Instructions | `CLAUDE.md` with `@imports` | `AGENTS.md`, always-loaded files inlined | `AGENTS.md`, inlined |
-| Tier agents | `agents/<tier>.md` (`model:`) | `agents/<tier>.toml` (`model`, `developer_instructions`) | `agents/<tier>.md` (`mode: subagent`, `model: provider/id`) |
+| Role agents | `agents/<role>.md` (`model:`) | `agents/<role>.toml` (`model`, `developer_instructions`) | `agents/<role>.md` (`mode: subagent`, `model: provider/id`) |
 | Skills | `~/.claude/skills/` (+ `/setup`) | `~/.agents/skills/` | `~/.config/opencode/skills/` |
-| Heavy queue | PreToolUse hook merged into `settings.json` | instruction (agents call `heavy.py`); lock dir added to `[sandbox_workspace_write] writable_roots` in `config.toml` | `plugins/heavy-queue.js` |
+| Heavy queue | PreToolUse hook merged into `settings.json` (+ a SessionStart hook reporting leftover agent worktrees) | instruction (agents call `heavy.py`); lock dir added to `[sandbox_workspace_write] writable_roots` in `config.toml` | `plugins/heavy-queue.js` |
 | Personal memory | `@~/.agent-memory/MEMORY.md` import (live) | "read `~/.agent-memory/MEMORY.md` at session start" line; memory dir added to `writable_roots` | same instruction line as Codex |
 
-The instructions file is always **rendered** (never symlinked). After editing `core/rules.md`, re-run the deploy. **Set the Lead's model yourself** (the main session); deploy prints where.
+The instructions file is always **rendered** (never symlinked). After editing `core/rules.md`, re-run the deploy.
 
-**Profiles:** in `profiles/<name>.toml`, an empty string means the agent inherits the session model. Fill in `openai.toml` (Codex) and `local.toml` with the model ids you use.
+**Settings:** which model each role uses and `max_parallel` come from, highest first: the `--max-parallel` flag → your `~/.agent-memory/settings.toml` (per tool: `[models.claude-code]`, `[models.codex]`, …) → `profiles/<name>.toml`. A specialist without its own model uses `specialist`. An empty string means the agent inherits the session model. In Claude Code, a `lead` model set in `settings.toml` is written into `settings.json`; otherwise deploy prints where to set it. `/setup` asks for these defaults and writes `settings.toml`.
 
 ### Personal memory
 
-`~/.agent-memory/` is one tool-neutral memory folder shared by every harness and project. `MEMORY.md` is the index (`- [Title](file.md) — hook`, one line per entry); each entry is its own file. Every deploy renders the path into the tool's instructions, and **seeds `MEMORY.md` and an explainer `README.md` (from `core/memory-seed/`), each only if missing**. After that the folder is yours: deploy never overwrites, backs up, links or edits it, even with `--link`. `--dry-run` creates nothing. To sync across machines, make it a private git repo yourself (deploy prints a hint and never runs git).
+`~/.agent-memory/` is one tool-neutral memory folder shared by every harness and project. `MEMORY.md` is the index (`- [Title](file.md) — hook`, one line per entry); each entry is its own file. Every deploy renders the path into the tool's instructions, and **seeds `MEMORY.md`, an explainer `README.md` and a commented-out `settings.toml` (from `core/memory-seed/`), each only if missing**. After that the folder is yours: deploy never overwrites, backs up, links or edits it, even with `--link`. `--dry-run` creates nothing. To sync across machines, make it a private git repo yourself (deploy prints a hint and never runs git).
 
-## Agent hierarchy
+## Agents
 
-Work flows like a small engineering org:
+Flat on purpose, to keep token use low without dropping checks:
 
-- **Lead**: the session you talk to. It plans, routes and audits, and never edits code.
-- **Senior**: architects a workstream and writes the plan. New features stop at the plan for your approval.
-- **Mid**: implements a task, including its tests.
-- **Junior**: mechanical, fully specified units. It escalates instead of guessing.
+- **Lead**: the session you talk to. It plans (and waits for your approval), writes small and medium changes itself, and audits everything once.
+- **Executor**: one task with a tight file list, including its tests. Spawned only for parallel work or work that would flood the main session.
+- **Specialists**: `reviewer`, `security`, `tester`, `e2e` (Playwright), `ui-ux`. Spawned per task type, read-only unless you opt into fixes.
+- **Escalation**: strong model, only when an executor fails twice or hits a real design problem.
 
-How the levels work together:
+How they work together:
 
-- Each level hands down a full **brief** (goal, scope, acceptance criteria, constraints) and receives a **report** with evidence (actual test output).
-- Each level **audits the work before passing it up**: it reads the diff, re-runs the tests and checks the guidelines, performance included. Rejected work goes back to the same agent at most twice, then gets escalated.
-- Routing picks the lowest tier that can own the work, and **skips levels for small jobs**.
-- At most 4 agents change code at the same time.
+- The Lead hands down a full **brief** (goal, exact files, acceptance criteria) and gets back a **report** with evidence (the heavy-queue summaries).
+- **One audit, two stages:** spec compliance first (bounced at once on a miss), then quality, performance included. Rework goes back to the same agent, at most twice.
+- **`max_parallel`** caps code-changing agents (default from settings; Pro 1, Max 3). The Lead asks once per session, at the first task that would spawn agents: the default, its recommendation for the task, or your own number.
+- **Worktrees** only when file lists overlap or a task is experimental. They share one `.git`. Their changes are applied to your checkout **uncommitted**, tested there, then the worktree and its `agent/*` branch are removed. A task isn't done while one of its worktrees exists.
 
-Say **"solo"** to make the Lead do a request itself.
-
-Tiers are roles, not models, so the same protocol runs on any LLM set. Where subagents can't nest or don't exist (some local setups), the protocol falls back to the parent dispatching on the child's behalf, or to running the tiers sequentially. Full rules: [`core/protocols/hierarchy.md`](core/protocols/hierarchy.md). Multi-agent task types (review, security, test, …) used to be `/…-team` skills; they now live in [`core/protocols/task-types.md`](core/protocols/task-types.md), and the Lead picks one from what you ask for.
+Roles are not models, so the same protocol runs on any LLM set; without subagents the Lead runs the roles in sequence. Full rules: [`core/protocols/hierarchy.md`](core/protocols/hierarchy.md). Multi-agent task types (feature, review, security, test, …) are in [`core/protocols/task-types.md`](core/protocols/task-types.md).
 
 ## Heavy-command queue
 
@@ -89,6 +90,8 @@ Test runners, builds, type-checks and linters (`npm test`, `ng build`, `tsc`, `j
 - A heavy command that calls another heavy command doesn't wait in the queue twice.
 - If the lock dir can't be written (e.g. a sandbox without it in its writable roots), the command still runs, unqueued, with a warning.
 
+**Output summaries.** The full output goes to `~/.agent-workflows/logs/<project>-<hash>/` (newest `heavy_log_keep` kept, default 20) and the agent sees a summary instead: one line on success, otherwise the failures with `file:line`, capped at ~60 lines. Parsers cover jest, vitest, Playwright, pytest, cargo, tsc / `ng build` and eslint; anything else gets error-like lines plus the tail. The exit code is always the command's own, and a failure is never summarized to nothing. Use `run --raw` or `HEAVY_RAW=1` for raw output.
+
 ```sh
 python3 ~/.agent-workflows/bin/heavy.py status                                # what's running
 python3 ~/.agent-workflows/bin/heavy.py run --shell bash -- "npm test"        # manual use
@@ -99,8 +102,22 @@ python3 ~/.agent-workflows/bin/heavy.py run --shell bash -- "npm test"        # 
 | `AW_HEAVY_SLOTS` | `2` | concurrent heavy commands |
 | `AW_HEAVY_MAX_WAIT` | `480` | seconds to wait for a slot before giving up (exit 75). Keep it under Claude Code's 10-minute tool timeout |
 | `AW_HEAVY_DIR` | `~/.agent-workflows/heavy` | lock directory |
+| `AW_HEAVY_LOG_DIR` | `~/.agent-workflows/logs` | full-output logs |
+| `HEAVY_RAW` | unset | `1` = raw output, no summary |
 
 Claude Code: the hook rewrites matching `Bash`/`PowerShell` commands. Normal permission prompts still apply to the rewritten command.
+
+## Agent worktrees
+
+```sh
+python3 ~/.agent-workflows/bin/worktrees.py list          # agent/* worktrees: size, age, dirty, applied
+python3 ~/.agent-workflows/bin/worktrees.py apply <path>  # its changes -> your checkout, uncommitted
+python3 ~/.agent-workflows/bin/worktrees.py clean         # remove the applied ones + their branches
+python3 ~/.agent-workflows/bin/worktrees.py discard <path>
+python3 ~/.agent-workflows/bin/worktrees.py check-disk    # exit 1 below min_free_disk_gb (default 10)
+```
+
+`clean` only removes worktrees whose changes it verified are already in your checkout; everything else is listed for you to decide. In Claude Code, a session-start hook prints one line when leftovers exist (e.g. after a crash).
 
 ## Skills
 
@@ -126,7 +143,7 @@ A skill is a folder with a `SKILL.md` (frontmatter: `name`, `description`). Clau
 ## New-machine checklist
 
 - [ ] `python deploy.py` (plus `--tool codex` / `--tool opencode` for the tools you use)
-- [ ] Set the Lead model (Claude Code: `/config`; Codex: `~/.codex/config.toml`; opencode: `opencode.json`)
+- [ ] Claude Code: `/setup` asks for your defaults (models, `max_parallel`, disk threshold) and writes `~/.agent-memory/settings.toml`; otherwise set the Lead model yourself (Codex: `~/.codex/config.toml`; opencode: `opencode.json`)
 - [ ] Claude Code: `/setup` for stack skills; add MCP + plugins; add a permissions allowlist (`/fewer-permission-prompts`)
 - [ ] Confirm git identity (`git config --global user.name/.email`) and SSH keys
 

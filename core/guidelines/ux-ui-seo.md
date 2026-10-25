@@ -2,9 +2,25 @@
 
 Read for building UI, components, accessibility, and public-page SEO.
 
+## Design direction
+
+Generic output ("AI slop": purple gradients, default Inter, centered card grids, fade-in on everything) comes from building without a direction and without looking at the result. Fix both.
+
+- **Brief before UI code.** For any new screen or visual redesign, write a short design brief and get it approved with the plan:
+  - **Direction:** one sentence on the aesthetic (e.g. "editorial, high-contrast, generous whitespace"), plus 2–3 concrete references (sites or apps) and what to take from each.
+  - **Type:** typeface pairing and scale (sizes, weights, line heights). Pick on purpose; don't default to the system or Inter.
+  - **Color:** palette as tokens, with an accent used sparingly; light and dark.
+  - **Layout:** grid, spacing scale, density, and the one element that breaks the grid on purpose.
+  - **Motion:** what moves, why, durations and easings (see [motion-3d](motion-3d.md)).
+  - **Signature moment:** the one thing that makes this screen memorable.
+
+  In an existing product, the brief is mostly "follow the design system". Only list what's new.
+- **Respect the existing brand and kit.** A brief extends the design system; it never forks it. If the brief needs a new primitive, add it to the kit.
+- **Look, compare, iterate.** After building, screenshot the screen at 390px, ~768px, and desktop (dark mode, where it exists, in its own round), look at the images, and compare them against the brief: hierarchy, spacing rhythm, alignment, type, contrast, and the signature moment. Fix what's off, then re-shoot. Cap it at about 3 screenshots per round and 3 rounds; each image costs tokens. Write screenshots to `.output/screenshots/` (e.g. `npx playwright screenshot --viewport-size=390,844 <url> .output/screenshots/x-390.png`). Desktop and mobile apps: see [ui-testing-platforms](ui-testing-platforms.md).
+
 ## UX standards
 
-- Clean, modern, business-grade UI — not a generic template look. Intentional spacing, hierarchy, contrast, and typography.
+- Clean, modern, business-grade UI — not a generic template look. Intentional spacing, hierarchy, contrast, and typography, per the design brief above.
 - Responsive, **mobile-first**. Verify narrow mobile, tablet, and desktop widths.
 - Handle every state: loading, empty, error, success, and offline/slow-network.
 - **Right-align all numeric values** in tables, lists, and number fields (financial readability).

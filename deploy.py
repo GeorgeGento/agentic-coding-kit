@@ -3,17 +3,21 @@
 
 Renders core/ (rules, guidelines, roles, protocols, skills) for one harness:
 
-  claude-code -> ~/.claude : CLAUDE.md (@imports), agents/<tier>.md, skills/,
-                             a PreToolUse hook routing heavy commands to the queue
+  claude-code -> ~/.claude : CLAUDE.md (@imports), agents/<role>.md, skills/,
+                             a PreToolUse hook routing heavy commands to the queue,
+                             a SessionStart hook reporting leftover agent worktrees,
+                             the Lead model in settings.json when the user chose one
   codex       -> ~/.codex  : AGENTS.md (always-loaded files inlined),
-                             agents/<tier>.toml, skills in ~/.agents/skills,
+                             agents/<role>.toml, skills in ~/.agents/skills,
                              the queue's lock dir and the memory dir made writable in its
                              sandbox (config.toml)
-  opencode    -> ~/.config/opencode : AGENTS.md (inlined), agents/<tier>.md,
+  opencode    -> ~/.config/opencode : AGENTS.md (inlined), agents/<role>.md,
                              skills/, a plugin routing heavy bash commands to the queue
 
-Tier models come from profiles/<name>.toml. The heavy-command queue
-(core/bin/heavy.py) is shared by all harnesses at ~/.agent-workflows/bin/.
+Role models and max_parallel come from profiles/<name>.toml, overridden by the
+user's ~/.agent-memory/settings.toml, overridden by --max-parallel. The scripts in
+core/bin/ (heavy queue, worktree cleanup) are shared by all harnesses at
+~/.agent-workflows/bin/.
 Anything overwritten is backed up to <target>/.deploy-backups/ first.
 
 The user's personal memory (~/.agent-memory/, tool-neutral) is referenced from every
@@ -23,7 +27,8 @@ Usage:
     python deploy.py                          # claude-code, profile "claude"
     python deploy.py --tool codex             # codex, profile "openai"
     python deploy.py --tool opencode          # opencode, profile "opencode"
-    python deploy.py --profile local          # pick another tier->model profile
+    python deploy.py --profile local          # pick another role->model profile
+    python deploy.py --max-parallel 3         # default parallel code-changing agents
     python deploy.py --dry-run                # show what would happen, change nothing
     python deploy.py --link                   # symlink copied dirs (edits stay live)
     python deploy.py --target PATH            # deploy somewhere other than the default
@@ -47,20 +52,24 @@ CORE = REPO_ROOT / "core"
 ADAPTERS = REPO_ROOT / "adapters"
 PROFILES_DIR = REPO_ROOT / "profiles"
 RULES_FILE = CORE / "rules.md"
-HIERARCHY_PROTOCOL = CORE / "protocols" / "hierarchy.md"
-HEAVY_SCRIPT = CORE / "bin" / "heavy.py"
+AGENT_PROTOCOL = CORE / "protocols" / "agent-protocol.md"
+# Deployed together to ~/.agent-workflows/bin/ (heavy.py imports heavy_parsers).
+BIN_SCRIPTS = ("heavy.py", "heavy_parsers.py", "worktrees.py")
 
 # core/ dirs the repo fully owns -> replaced wholesale at <target>/<name>.
 OWNED_DIRS = ("guidelines", "roles", "protocols")
 # Files the instructions file loads every session (paths relative to <target>).
 ALWAYS_LOADED = (
     "guidelines/coding-standards.md",
-    "guidelines/workflow.md",
-    "guidelines/testing.md",
-    "guidelines/performance.md",
     "roles/lead.md",
 )
 ALWAYS_LOADED_MARKER = "{{ALWAYS_LOADED}}"
+MAX_PARALLEL_MARKER = "{{MAX_PARALLEL}}"
+DEFAULT_MAX_PARALLEL = 1
+# Roles that fall back to the profile's `specialist` model when they have no own entry.
+SPECIALIST_ROLES = ("reviewer", "security", "tester", "e2e", "ui-ux")
+# Tier agents replaced by executor/specialists/escalation; removed (backed up) from old deploys.
+RETIRED_AGENTS = ("senior", "mid", "junior")
 # The Lead is the main session, not a subagent; it is loaded via the instructions file.
 MAIN_SESSION_ROLE = "lead"
 # Skills folded into protocols/task-types.md; removed (backed up) from old deploys.
@@ -74,9 +83,11 @@ MEMORY_INDEX_FILE = "MEMORY.md"
 MEMORY_DIR_MARKER = "{{MEMORY_DIR}}"
 MEMORY_INDEX_MARKER = "{{MEMORY_INDEX}}"
 MEMORY_SEED_DIR = CORE / "memory-seed"
+SETTINGS_FILE = "settings.toml"
 HOOK_MATCHER = "Bash|PowerShell"
 OPENCODE_PLUGIN = ADAPTERS / "opencode" / "plugins" / "heavy-queue.js"
 HOOK_ID = "heavy.py\" hook"  # identifies our hook entry inside settings.json
+SESSION_HOOK_ID = "worktrees.py\" list"  # identifies our SessionStart hook entry
 CODEX_SANDBOX_TABLE = "sandbox_workspace_write"
 CODEX_SANDBOX_HEADER = re.compile(rf"^\[{CODEX_SANDBOX_TABLE}\][ \t]*(#.*)?$", re.MULTILINE)
 INLINE_WRITABLE_ROOTS = re.compile(
@@ -124,9 +135,43 @@ def _stamp() -> str:
 
 
 def load_profile(name: str) -> dict[str, str]:
-    """Return the tier -> model mapping from profiles/<name>.toml ("" = inherit)."""
+    """Return the role -> model mapping from profiles/<name>.toml ("" = inherit)."""
+    return _load_profile_file(name)["models"]
+
+
+def _load_profile_file(name: str) -> dict:
     with open(PROFILES_DIR / f"{name}.toml", "rb") as fh:
-        return tomllib.load(fh)["models"]
+        return tomllib.load(fh)
+
+
+@dataclass(frozen=True)
+class Settings:
+    """Effective deploy settings after applying flag > user settings > profile."""
+    models: dict[str, str]
+    max_parallel: int
+    lead_chosen: bool  # True when the user's settings.toml names the Lead model
+
+
+def resolve_settings(tool_name: str, profile: dict, user: dict,
+                     max_parallel_flag: int | None) -> Settings:
+    """Merge the profile with the user's settings.toml and the CLI flag.
+
+    `user["models"][tool_name]` overrides profile models per role; a specialist role
+    without its own entry uses the `specialist` model. Inputs are not mutated.
+
+    Example:
+        resolve_settings("claude-code", {"models": {"lead": "a"}, "max_parallel": 1},
+                         {"models": {"claude-code": {"lead": "b"}}}, None)
+        # -> Settings(models={"lead": "b", ...}, max_parallel=1, lead_chosen=True)
+    """
+    user_models = user.get("models", {}).get(tool_name, {})
+    models = {**profile.get("models", {}), **user_models}
+    specialist = models.get("specialist", "")
+    for role in SPECIALIST_ROLES:
+        models.setdefault(role, specialist)
+    max_parallel = (max_parallel_flag or user.get("max_parallel")
+                    or profile.get("max_parallel") or DEFAULT_MAX_PARALLEL)
+    return Settings(models, int(max_parallel), bool(user_models.get(MAIN_SESSION_ROLE)))
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -146,11 +191,12 @@ def absolutize_links(text: str, root: Path) -> str:
     return text.replace("](README.md)", f"]({root.as_posix()}/README.md)")
 
 
-def render_instructions(tool: Tool, rules: str, target: Path) -> str:
+def render_instructions(tool: Tool, rules: str, target: Path,
+                        max_parallel: int = DEFAULT_MAX_PARALLEL) -> str:
     """Render core/rules.md as the harness's global instructions file.
 
     Example:
-        render_instructions(TOOLS["codex"], RULES_FILE.read_text(), Path("~/.codex"))
+        render_instructions(TOOLS["codex"], RULES_FILE.read_text(), Path("~/.codex"), 1)
     """
     if tool.inline_always_loaded:
         parts = []
@@ -170,7 +216,8 @@ def render_instructions(tool: Tool, rules: str, target: Path) -> str:
         memory_index = f"@{memory_dir}/{MEMORY_INDEX_FILE}"
     rendered = (rules.replace(ALWAYS_LOADED_MARKER, loaded)
                      .replace(MEMORY_INDEX_MARKER, memory_index)
-                     .replace(MEMORY_DIR_MARKER, memory_dir))
+                     .replace(MEMORY_DIR_MARKER, memory_dir)
+                     .replace(MAX_PARALLEL_MARKER, str(max_parallel)))
     return absolutize_links(rendered, target)
 
 
@@ -182,8 +229,8 @@ def render_agent(tool: Tool, role_text: str, model: str, protocol_text: str,
     with no context beyond its definition and the brief it is handed.
 
     Example:
-        render_agent(TOOLS["claude-code"], Path("core/roles/mid.md").read_text(),
-                     "claude-sonnet-5-5", HIERARCHY_PROTOCOL.read_text(), Path("~/.claude"))
+        render_agent(TOOLS["claude-code"], Path("core/roles/executor.md").read_text(),
+                     "claude-sonnet-5-5", AGENT_PROTOCOL.read_text(), Path("~/.claude"))
     """
     meta, body = split_frontmatter(role_text)
     instructions = absolutize_links(
@@ -214,6 +261,10 @@ def hook_command(heavy_path: Path) -> str:
     return f'"{Path(sys.executable).as_posix()}" "{heavy_path.as_posix()}" hook'
 
 
+def session_hook_command(worktrees_path: Path) -> str:
+    return f'"{Path(sys.executable).as_posix()}" "{worktrees_path.as_posix()}" list --quiet'
+
+
 def render_opencode_plugin(template: str, heavy_path: Path) -> str:
     """Fill the opencode queue plugin with this machine's python and heavy.py paths."""
     return (template.replace("__PYTHON__", json.dumps(Path(sys.executable).as_posix()))
@@ -229,14 +280,33 @@ def merge_hook(settings: dict, command: str) -> dict:
         merge_hook({}, '"python" "/h/.agent-workflows/bin/heavy.py" hook')
     """
     merged = json.loads(json.dumps(settings))
-    pre = merged.setdefault("hooks", {}).setdefault("PreToolUse", [])
-    for entry in pre:
-        for hook in entry.get("hooks", []):
-            if HOOK_ID in hook.get("command", ""):
-                hook["command"] = command
-                return merged
-    pre.append({"matcher": HOOK_MATCHER, "hooks": [{"type": "command", "command": command}]})
+    _upsert_command_hook(merged, "PreToolUse", HOOK_ID, command, HOOK_MATCHER)
     return merged
+
+
+def merge_settings(settings: dict, hook_cmd: str, session_cmd: str,
+                   lead_model: str | None) -> dict:
+    """Return settings with both our hooks and (if given) the Lead model; input not mutated."""
+    merged = merge_hook(settings, hook_cmd)
+    _upsert_command_hook(merged, "SessionStart", SESSION_HOOK_ID, session_cmd, None)
+    if lead_model:
+        merged["model"] = lead_model
+    return merged
+
+
+def _upsert_command_hook(settings: dict, event: str, hook_id: str, command: str,
+                         matcher: str | None) -> None:
+    """Refresh our hook entry for `event` in place, or append it."""
+    entries = settings.setdefault("hooks", {}).setdefault(event, [])
+    for entry in entries:
+        for hook in entry.get("hooks", []):
+            if hook_id in hook.get("command", ""):
+                hook["command"] = command
+                return
+    entry = {"hooks": [{"type": "command", "command": command}]}
+    if matcher:
+        entry = {"matcher": matcher, **entry}
+    entries.append(entry)
 
 
 def add_codex_writable_root(text: str, root: str) -> str | None:
@@ -292,10 +362,12 @@ def _append_to_inline_roots(text: str, root: str, roots: object) -> str | None:
 
 class Deployer:
     def __init__(self, tool: Tool, target: Path, *, profile: str, link: bool,
-                 dry_run: bool, hook: bool, stamp: str) -> None:
+                 dry_run: bool, hook: bool, stamp: str,
+                 max_parallel: int | None = None) -> None:
         self.tool = tool
         self.target = target
         self.profile = profile
+        self.max_parallel_flag = max_parallel
         self.link = link
         self.dry = dry_run
         self.hook = hook
@@ -358,20 +430,36 @@ class Deployer:
         self._backup(self.target / "README.md")
         self._place(REPO_ROOT / "README.md", self.target / "README.md")
 
-    def deploy_instructions(self) -> None:
+    def deploy_instructions(self, max_parallel: int) -> None:
         rules = RULES_FILE.read_text(encoding="utf-8")
         self._write(self.target / self.tool.instructions_file,
-                    render_instructions(self.tool, rules, self.target))
+                    render_instructions(self.tool, rules, self.target, max_parallel))
 
     def deploy_agents(self, models: dict[str, str]) -> None:
-        protocol = HIERARCHY_PROTOCOL.read_text(encoding="utf-8")
+        protocol = AGENT_PROTOCOL.read_text(encoding="utf-8")
         for role_path in sorted((CORE / "roles").glob("*.md")):
-            tier = role_path.stem
-            if tier == MAIN_SESSION_ROLE:
+            role = role_path.stem
+            if role == MAIN_SESSION_ROLE:
                 continue
             content = render_agent(self.tool, role_path.read_text(encoding="utf-8"),
-                                   models.get(tier, ""), protocol, self.target)
-            self._write(self.target / "agents" / f"{tier}{self.tool.agent_ext}", content)
+                                   models.get(role, ""), protocol, self.target)
+            self._write(self.target / "agents" / f"{role}{self.tool.agent_ext}", content)
+        for name in RETIRED_AGENTS:
+            old = self.target / "agents" / f"{name}{self.tool.agent_ext}"
+            if old.exists():
+                self.log(f"retire  agent {name} (replaced by executor/specialists/escalation)")
+                self._backup(old)
+
+    def load_user_settings(self) -> dict:
+        """Read ~/.agent-memory/settings.toml; {} if missing or invalid (never fatal)."""
+        path = self.memory / SETTINGS_FILE
+        if not path.is_file():
+            return {}
+        try:
+            return tomllib.loads(path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            self.log(f"! {path} is not valid TOML ({exc}); using profile defaults")
+            return {}
 
     def deploy_skills(self) -> None:
         """Merge skills child-by-child so sibling (user-installed) skills survive."""
@@ -387,17 +475,18 @@ class Deployer:
                 self.log(f"retire  {name} (folded into protocols/task-types.md)")
                 self._backup(skills_dir / name)
 
-    def deploy_heavy(self) -> None:
-        dest = self.shared / "bin" / "heavy.py"
-        self._backup(dest)
-        self._place(HEAVY_SCRIPT, dest)
+    def deploy_bin(self) -> None:
+        for name in BIN_SCRIPTS:
+            dest = self.shared / "bin" / name
+            self._backup(dest)
+            self._place(CORE / "bin" / name, dest)
 
     def deploy_plugin(self) -> None:
         content = render_opencode_plugin(OPENCODE_PLUGIN.read_text(encoding="utf-8"),
                                          self.shared / "bin" / "heavy.py")
         self._write(self.target / "plugins" / OPENCODE_PLUGIN.name, content)
 
-    def deploy_hook(self) -> None:
+    def deploy_hook(self, lead_model: str | None) -> None:
         settings_path = self.target / "settings.json"
         settings = {}
         if settings_path.exists():
@@ -406,9 +495,11 @@ class Deployer:
             except json.JSONDecodeError as exc:
                 self.log(f"! {settings_path} is not valid JSON ({exc}); queue hook NOT installed")
                 return
-        merged = merge_hook(settings, hook_command(self.shared / "bin" / "heavy.py"))
+        merged = merge_settings(settings, hook_command(self.shared / "bin" / "heavy.py"),
+                                session_hook_command(self.shared / "bin" / "worktrees.py"),
+                                lead_model)
         if merged == settings:
-            self.log(f"ok      {settings_path} (queue hook already present)")
+            self.log(f"ok      {settings_path} (hooks and model already present)")
             return
         if settings_path.exists() and not self.dry:
             bak_dir = self.target / ".deploy-backups"
@@ -472,28 +563,39 @@ class Deployer:
     def _write_settings(self, path: Path, settings: dict) -> None:
         if not self.dry:
             path.write_text(json.dumps(settings, indent=2) + "\n", encoding="utf-8")
-        self.log(f"hook    {path} (PreToolUse {HOOK_MATCHER} -> heavy queue)")
+        model = f"; model {settings['model']}" if settings.get("model") else ""
+        self.log(f"hook    {path} (PreToolUse {HOOK_MATCHER} -> heavy queue; "
+                 f"SessionStart -> leftover worktrees{model})")
 
     def run(self) -> None:
-        models = load_profile(self.profile)
+        user = self.load_user_settings()
+        settings = resolve_settings(self.tool.name, _load_profile_file(self.profile), user,
+                                    self.max_parallel_flag)
+        models = settings.models
         self.log(f"tool:    {self.tool.name}")
         self.log(f"target:  {self.target}")
         self.log(f"profile: {self.profile}")
         self.log(f"mode:    {'symlink' if self.link else 'copy'}")
+        self.log(f"max_parallel: {settings.max_parallel}")
+        if not user.get("models", {}).get(self.tool.name):
+            self.log(f"hint    no models for {self.tool.name} in {self.memory / SETTINGS_FILE}; "
+                     "using profile defaults (run /setup to choose)")
         self.deploy_owned()
-        self.deploy_instructions()
+        self.deploy_instructions(settings.max_parallel)
         self.deploy_agents(models)
         self.deploy_skills()
-        self.deploy_heavy()
+        self.deploy_bin()
         self.deploy_memory()
         if self.hook and self.tool.hook == "settings":
-            self.deploy_hook()
+            self.deploy_hook(models.get(MAIN_SESSION_ROLE) if settings.lead_chosen else None)
         elif self.hook and self.tool.hook == "plugin":
             self.deploy_plugin()
         elif self.hook and self.tool.hook == "sandbox":
             self.deploy_sandbox_root()
         print()
         print(f"Done ({self.steps} step(s)).")
+        if settings.lead_chosen and self.tool.hook == "settings" and self.hook:
+            return  # the Lead model was written into settings.json
         lead = models.get(MAIN_SESSION_ROLE) or "(your choice)"
         where = {"claude-code": "/config or settings.json \"model\"",
                  "codex": "\"model\" in ~/.codex/config.toml",
@@ -505,10 +607,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy agent-workflows into a harness config dir.")
     parser.add_argument("--tool", choices=sorted(TOOLS), default="claude-code",
                         help="target harness (default: claude-code)")
-    parser.add_argument("--profile", help="tier->model profile in profiles/<name>.toml "
+    parser.add_argument("--profile", help="role->model profile in profiles/<name>.toml "
                                           "(default: claude / openai / opencode per tool)")
     parser.add_argument("--target", type=Path,
                         help="destination dir (default: ~/.claude, ~/.codex or ~/.config/opencode)")
+    parser.add_argument("--max-parallel", type=int, metavar="N",
+                        help="default number of parallel code-changing agents "
+                             "(overrides settings.toml and the profile)")
     parser.add_argument("--link", action="store_true", help="symlink copied dirs (live edits)")
     parser.add_argument("--dry-run", action="store_true", help="show actions without changing anything")
     parser.add_argument("--no-hook", action="store_true",
@@ -525,9 +630,12 @@ def main() -> int:
     if not (PROFILES_DIR / f"{profile}.toml").is_file():
         print(f"Unknown profile '{profile}' (no profiles/{profile}.toml).")
         return 1
+    if args.max_parallel is not None and args.max_parallel < 1:
+        print("--max-parallel must be at least 1.")
+        return 1
 
     Deployer(tool, target, profile=profile, link=args.link, dry_run=args.dry_run,
-             hook=not args.no_hook, stamp=_stamp()).run()
+             hook=not args.no_hook, stamp=_stamp(), max_parallel=args.max_parallel).run()
     return 0
 
 

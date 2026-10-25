@@ -1,5 +1,6 @@
 """Tests for core/bin/heavy.py. Run: python -m unittest tests.test_heavy -v"""
 
+import io
 import json
 import ctypes
 import os
@@ -29,12 +30,12 @@ HEAVY_COMMANDS = [
     "npm test", "pnpm run build", "npx jest --ci", "FOO=1 vitest run",
     "cd app && npm run lint", "ng build --configuration production", "tsc --noEmit",
     "docker build .", "pytest -q", "npm run test:unit", "python -m pytest",
-    "yarn jest", "cargo test", "docker compose build",
+    "yarn jest", "cargo test", "docker compose build", "maestro test .maestro/",
 ]
 CHEAP_COMMANDS = [
     "grep -r jest src", 'git commit -m "npm test"', "ls", "cat package.json", "ng serve",
     "npm run dev", "npm start", "vitest --watch", "jest --watch", "docker compose up",
-    "echo build", "rg tsc", "cat tsconfig.json", "echo 'a && npm test'",
+    "echo build", "rg tsc", "cat tsconfig.json", "echo 'a && npm test'", "maestro hierarchy",
 ]
 
 
@@ -159,6 +160,9 @@ class RunTests(unittest.TestCase):
         env.update({
             "AW_HEAVY_DIR": self.dir, "AW_HEAVY_SLOTS": str(slots),
             "PATH": SHELL_DIR + os.pathsep + env.get("PATH", ""),
+            # Queue behaviour is tested on raw output; summaries have their own tests.
+            heavy.ENV_RAW: "1", heavy.ENV_LOG_DIR: str(Path(self.dir, "logs")),
+            heavy.ENV_SETTINGS: str(Path(self.dir, "settings.toml")),
         })
         env.update(extra)
         return env
@@ -375,12 +379,107 @@ class RunTests(unittest.TestCase):
 class WindowsPathTests(unittest.TestCase):
     def test_windows_runs_in_process_without_supervisor(self):
         with mock.patch.object(heavy, "IS_WINDOWS", True), \
-                mock.patch.dict(os.environ, {heavy.ENV_HELD: ""}), \
+                mock.patch.dict(os.environ, {heavy.ENV_HELD: "", heavy.ENV_RAW: "1"}), \
                 mock.patch.object(heavy, "_run_owned", return_value=7) as owned, \
                 mock.patch.object(heavy, "_spawn_controlled") as spawn:
             self.assertEqual(heavy.run_heavy("bash", "npm test"), 7)
-        owned.assert_called_once_with("bash", "npm test")
+        owned.assert_called_once_with("bash", "npm test", out=None)
         spawn.assert_not_called()
+
+
+class SummaryRunTests(unittest.TestCase):
+    """End to end: output goes to a log, a summary is printed, the exit code is kept."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp(prefix="heavy-summary-test-"))
+        self.addCleanup(shutil.rmtree, self.dir, True)
+        self.logs = self.dir / "logs"
+        self.settings = self.dir / "settings.toml"
+
+    def _env(self, **extra):
+        env = {k: v for k, v in os.environ.items() if k not in (heavy.ENV_HELD, heavy.ENV_RAW)}
+        env.update({"AW_HEAVY_DIR": str(self.dir / "locks"), "AW_HEAVY_SLOTS": "1",
+                    "PATH": SHELL_DIR + os.pathsep + env.get("PATH", ""),
+                    heavy.ENV_LOG_DIR: str(self.logs), heavy.ENV_SETTINGS: str(self.settings)})
+        env.update(extra)
+        return env
+
+    def _run(self, command, *flags, **extra):
+        return subprocess.run(
+            [sys.executable, str(HEAVY), "run", *flags, "--shell", SHELL, "--", command],
+            env=self._env(**extra), capture_output=True, text=True, encoding="utf-8",
+            timeout=RUN_TIMEOUT, cwd=self.dir)
+
+    def _log_files(self):
+        return sorted(self.logs.rglob("*.log"))
+
+    def test_success_prints_one_line_and_keeps_full_log(self):
+        proc = self._run("printf 'noise\\nTests:       2 passed, 2 total\\n'")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        lines = proc.stdout.strip().splitlines()
+        self.assertEqual(len(lines), 1, proc.stdout)
+        self.assertIn("exit 0", lines[0])
+        self.assertIn("2 passed", lines[0])
+        logs = self._log_files()
+        self.assertEqual(len(logs), 1)
+        self.assertIn("noise", logs[0].read_text(encoding="utf-8"))
+        self.assertIn(logs[0].as_posix(), lines[0])
+
+    def test_failure_lists_items_and_keeps_exit_code(self):
+        script = ("printf 'noise\\nFAILED tests/test_calc.py::test_add - assert 4 == 3\\n"
+                  "==== 1 failed, 1 passed in 0.02s ====\\n'; exit 1")
+        proc = self._run(script)
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("exit 1", proc.stdout)
+        self.assertIn("1 failed, 1 passed", proc.stdout)
+        self.assertIn("1. tests/test_calc.py::test_add - assert 4 == 3", proc.stdout)
+        self.assertNotIn("noise", proc.stdout.splitlines()[1:])  # header echoes the command
+
+    def test_unknown_failure_falls_back_to_tail(self):
+        proc = self._run("echo 'something broke: Error code 9'; exit 4")
+        self.assertEqual(proc.returncode, 4)
+        self.assertIn("exit 4", proc.stdout)
+        self.assertIn("something broke", proc.stdout)
+
+    def test_raw_flag_and_env_print_raw_output(self):
+        for flags, extra in ((("--raw",), {}), ((), {heavy.ENV_RAW: "1"})):
+            with self.subTest(flags=flags, extra=extra):
+                proc = self._run("echo plain-output", *flags, **extra)
+                self.assertEqual(proc.stdout.strip(), "plain-output")
+                self.assertNotIn("heavy:", proc.stdout)
+
+    def test_nested_call_stays_raw(self):
+        proc = self._run("echo nested-output", **{heavy.ENV_HELD: "1"})
+        self.assertEqual(proc.stdout.strip(), "nested-output")
+        self.assertEqual(self._log_files(), [])
+
+    def test_retention_keeps_newest_logs(self):
+        self.settings.write_text("heavy_log_keep = 2\n", encoding="utf-8")
+        for _ in range(3):
+            self.assertEqual(self._run("echo hi").returncode, 0)
+        self.assertEqual(len(self._log_files()), 2)
+
+    def test_queue_exit_codes_show_raw_messages_not_a_summary(self):
+        def fake_queue(_shell, _command, out=None):
+            out.write(b"[heavy] queue busy: no slot free\n")
+            return heavy.EXIT_QUEUE_BUSY
+        with mock.patch.dict(os.environ, {heavy.ENV_LOG_DIR: str(self.logs),
+                                          heavy.ENV_SETTINGS: str(self.settings)}), \
+                mock.patch.object(heavy, "_run_queued", side_effect=fake_queue), \
+                mock.patch("sys.stdout", new_callable=io.StringIO) as out, \
+                mock.patch("sys.stderr", new_callable=io.StringIO) as err:
+            code = heavy._run_summarized("bash", "npm test")
+        self.assertEqual(code, heavy.EXIT_QUEUE_BUSY)
+        self.assertIn("queue busy", err.getvalue())
+        self.assertEqual(out.getvalue(), "")
+
+    def test_unwritable_log_dir_runs_raw_with_warning(self):
+        blocker = self.dir / "file"
+        blocker.write_text("", encoding="utf-8")
+        proc = self._run("echo still-ran; exit 2", **{heavy.ENV_LOG_DIR: str(blocker / "x")})
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("still-ran", proc.stdout)
+        self.assertIn("log dir unavailable", proc.stderr)
 
 
 class HookTests(unittest.TestCase):

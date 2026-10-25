@@ -1,6 +1,6 @@
 ---
 name: setup
-description: install curated Claude Code skills and subagents for your stack (Angular, React, Vue, Node/NestJS, TypeScript, Electron, Flutter, UI/UX, quality/review), fetched fresh from source into ~/.claude/skills and ~/.claude/agents
+description: install curated Claude Code skills and subagents for your stack (Angular, React, Vue, Node/NestJS, TypeScript, Electron, Flutter, UI/UX, quality/review), fetched fresh from source into ~/.claude/skills and ~/.claude/agents; then asks for your global defaults (models, max_parallel, disk threshold) and writes ~/.agent-memory/settings.toml
 trigger: /setup
 ---
 
@@ -29,6 +29,15 @@ Install a curated set of high-quality skills for this stack into `~/.claude/skil
 2. Pass through whatever flags the user gave (`--list`, `--only`, `--all`, `--dry-run`, `--target`).
 3. Report exactly what was installed and from where.
 4. **Trust note:** community skills are third-party code fetched from the repos below. Remind the user to review them before relying on them (see the `dependencies-supply-chain` guideline).
+5. **Global defaults** (skip with `--dry-run`, `--list`, or when the user only asked for specific skills):
+   1. Read `~/.agent-memory/settings.toml`.
+   2. Ask the user with the structured question tool, suggestions first. Show the current value when one is set.
+      - Plan: **Pro → `max_parallel = 1`** / **Max → `max_parallel = 3`** / custom.
+      - Lead model: `claude-sonnet-5-5` (switch to Opus with `/model` for hard design) / `claude-opus-5-5`.
+      - Executor and specialist models: `claude-sonnet-5-5` / other. Escalation: `claude-opus-5-5` / other. `security` uses the specialist model unless they want their own.
+      - `min_free_disk_gb` for agent worktrees: 10 / 5 / custom.
+   3. Write the answers to `~/.agent-memory/settings.toml`: top-level `max_parallel`, `min_free_disk_gb`, `heavy_log_keep`, and `[models.claude-code]` with `lead`, `executor`, `specialist`, `escalation` (plus any per-specialist override). Keep the file's comments and any other tools' `[models.*]` tables. If the file already has values, show the change and get a yes before writing.
+   4. Re-run `python deploy.py` from the agent-workflows repo so agents and `settings.json` pick the values up. If you don't know where the repo is, ask. Report the `max_parallel` and models the deploy printed.
 
 ## Catalog
 
@@ -41,6 +50,8 @@ Lean defaults (✅) cover the Angular + NestJS + TypeScript stack; everything el
 | `frontend-design` | skill | `anthropics/skills` (official) | ✅ |
 | `webapp-testing` | skill | `anthropics/skills` (official) | ✅ |
 | `theme-factory` | skill | `anthropics/skills` (official) | — |
+| `gsap-skills` | skill bundle (8) | `greensock/gsap-skills` (official, MIT) | — |
+| `threejs-skills` | skill bundle (13) | `CloudAI-X/threejs-skills` (MIT) | — |
 | `typescript-pro` | skill | `Jeffallan/claude-skills` | ✅ |
 | `javascript-pro` | skill | `Jeffallan/claude-skills` | — |
 | `nestjs-expert` | skill | `Jeffallan/claude-skills` | ✅ |
@@ -59,9 +70,10 @@ Lean defaults (✅) cover the Angular + NestJS + TypeScript stack; everything el
 | `graphify` | pip | `pip: graphifyy` (MIT, self-updating) | ✅ |
 
 - **skills** are git-fetched into `~/.claude/skills/<name>/`.
-- **agents** are Claude Code *subagents* — a single `.md` placed in `~/.claude/agents/<name>.md`, spawned as role-specialized reviewers/builders (e.g. as extra reviewers in multi-agent review/security tasks; the hierarchy's own `senior`/`mid`/`junior` agents come from `deploy.py`).
+- **agents** are Claude Code *subagents* — a single `.md` placed in `~/.claude/agents/<name>.md`, spawned as role-specialized reviewers/builders (e.g. as extra reviewers in multi-agent review/security tasks; the repo's own `executor`/`escalation`/specialist agents come from `deploy.py`).
+- **skill bundles** (`gsap-skills`, `threejs-skills`) install each of their skills as its own folder. Every installed skill's description loads into every session (~650 tokens for GSAP, ~930 for three.js), so recommend installing them into the project that uses them: `--only threejs-skills --target <project>/.claude/skills`.
 - **graphify** is a Python package — `/setup` runs `pip install --upgrade graphifyy` + `graphify install`.
-- **Bundled in the config repo** (deployed by `deploy.py`, no catalog entry): `setup`, the `senior`/`mid`/`junior` tier agents, and `ionic-capacitor` (vendored, MIT — upstream is dormant so the repo copy is the source of truth).
+- **Bundled in the config repo** (deployed by `deploy.py`, no catalog entry): `setup`, the `executor`/`escalation`/`reviewer`/`security`/`tester`/`e2e`/`ui-ux` role agents, and `ionic-capacitor` (vendored, MIT — upstream is dormant so the repo copy is the source of truth).
 
 The registry lives in [`install_skills.py`](install_skills.py) — add/remove entries there. All non-official entries are third-party code: review before relying on them.
 

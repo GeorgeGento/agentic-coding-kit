@@ -12,13 +12,13 @@ Global rules for AI coding agents (Claude Code, Codex, local models), deployed f
 
 ## Always-loaded
 
-Binding every session: coding-standards, workflow, testing, performance, and the Lead role.
+Binding every session: coding-standards and the Lead role. Workflow, testing and performance are on demand (router below); their non-negotiables are in the checklist at the bottom.
 
 {{ALWAYS_LOADED}}
 
 ## Personal memory (global, every tool and project)
 
-The user's own memory lives in `{{MEMORY_DIR}}`. It is shared by every tool and every project, it is never inside a project or a tool's config dir, and deploys never touch it.
+The user's own memory lives in `{{MEMORY_DIR}}`. It is shared by every tool and every project, it is never inside a project or a tool's config dir, and deploys never touch it. The user's defaults (models, `max_parallel`, `min_free_disk_gb`, `heavy_log_keep`) live in `{{MEMORY_DIR}}/settings.toml`; setup writes it, and edits apply on the next deploy. **Default `max_parallel` for this install: {{MAX_PARALLEL}}** (code-changing agents at once; see [hierarchy](protocols/hierarchy.md)).
 
 {{MEMORY_INDEX}}
 
@@ -38,9 +38,15 @@ The user's own memory lives in `{{MEMORY_DIR}}`. It is shared by every tool and 
 | Angular / frontend / Tailwind | [`guidelines/angular-frontend.md`](guidelines/angular-frontend.md) |
 | Node / NestJS / API / MongoDB | [`guidelines/backend-nodejs.md`](guidelines/backend-nodejs.md) |
 | Authoring a reusable library / framework / shared package | [`guidelines/library-design.md`](guidelines/library-design.md) |
-| UI/UX, components, accessibility, SEO | [`guidelines/ux-ui-seo.md`](guidelines/ux-ui-seo.md) |
+| UI/UX, components, accessibility, SEO, design direction | [`guidelines/ux-ui-seo.md`](guidelines/ux-ui-seo.md) |
+| Opening an app to check its UI or flows: web, Electron, Tauri, Android, Compose Desktop | [`guidelines/ui-testing-platforms.md`](guidelines/ui-testing-platforms.md) |
+| Animation, transitions, scroll effects, canvas/WebGL, three.js | [`guidelines/motion-3d.md`](guidelines/motion-3d.md) (+ `ux-ui-seo.md`) |
 | React / Vue / Ionic / Electron / other frameworks | No guideline file. Use the matching skill if installed; the project's own `CLAUDE.md`/`AGENTS.md` carries project conventions |
-| Delegating to Senior/Mid/Junior agents (any code change) | [`protocols/hierarchy.md`](protocols/hierarchy.md) |
+| Planning, workflow, TODO/docs upkeep, reviews | [`guidelines/workflow.md`](guidelines/workflow.md) |
+| Writing or running tests | [`guidelines/testing.md`](guidelines/testing.md) |
+| Any code touching data, loops, queries, I/O, or the frontend | [`guidelines/performance.md`](guidelines/performance.md) |
+| A failing test, a bug, or unexpected behavior | [`guidelines/debugging.md`](guidelines/debugging.md) |
+| Spawning executors/specialists, worktrees, `max_parallel` | [`protocols/hierarchy.md`](protocols/hierarchy.md) |
 | Multi-agent work: feature, analyze, review, security, implement, test, refactor | [`protocols/task-types.md`](protocols/task-types.md) + [`protocols/teams.md`](protocols/teams.md) |
 
 > The table is the **router** for the on-demand files. If a task spans several rows, read each relevant file before editing. Reading these files is non-destructive discovery, so never ask permission to read them.
@@ -56,16 +62,19 @@ These are the non-negotiables. The guideline files expand on them; this is the p
 - **Preserve comments.** Never delete or rewrite existing comments except to correct them. Add comments for non-obvious "why", never to restate the code.
 - **Destructive actions need explicit confirmation.** Never delete files, data, or code, and never rename public APIs / exported symbols / routes / DB fields, without the user asking. Reading, searching, and exploring are always free.
 - **Never wipe user/app data to test.** Treat databases, app `userData`/`%APPDATA%`/`~/.config`/`~/Library/Application Support` dirs, caches with real state, and any file you didn't create as off-limits for deletion — even as "test setup" or to prove fresh-state behavior. They hold the user's real history/state and deletion is usually irreversible (`rm -rf`, `Remove-Item -Force` skip the trash). To test fresh-state, point the app at a throwaway data dir (temp `userData`, env override, fixture path) or back the file up first — and if you truly must touch the real one, stop and ask. This rule was written after deleting a user's app DB (sync history + baseline) during boot tests.
-- **Never `git commit`/`push`/`merge`/`reset`/`rebase`/`branch -d`/tag, or any history- or remote-mutating git op,** unless the user explicitly asks **with an imperative in that message** ("commit it", "push it", "merge it", "run it", "do it"). A **question or readiness check is NOT permission** — "are we ready to commit?", "should we commit?", "can you push?", "how do I merge / delete the branch?" all mean **assess and explain, then STOP**; do not run the action. When unsure whether a phrasing authorizes the action, treat it as a question and ask. Staging and creating branches are always fine; the commit/push is the user's to make. Commands that hide or discard uncommitted work (`stash`, `checkout -- <path>`, `restore`, `clean`) never run silently: prompt the user first (offering a separate `git worktree` as the alternative) and wait for a yes. (See [git-and-versioning](guidelines/git-and-versioning.md).) This was written after committing on "are we ready to commit?" — a question, not an instruction.
+- **Never `git commit`/`push`/`merge`/`reset`/`rebase`/`branch -d`/tag, or any history- or remote-mutating git op,** unless the user explicitly asks **with an imperative in that message** ("commit it", "push it", "merge it", "run it", "do it"). A **question or readiness check is NOT permission** — "are we ready to commit?", "should we commit?", "can you push?", "how do I merge / delete the branch?" all mean **assess and explain, then STOP**; do not run the action. When unsure whether a phrasing authorizes the action, treat it as a question and ask. Staging and creating branches are always fine; the commit/push is the user's to make. **Standing exception:** `agent/*` branches and worktrees the Lead created may be removed without asking once their changes are applied and pass tests (see [hierarchy](protocols/hierarchy.md)). Commands that hide or discard uncommitted work (`stash`, `checkout -- <path>`, `restore`, `clean`) never run silently: prompt the user first (offering a separate `git worktree` as the alternative) and wait for a yes. (See [git-and-versioning](guidelines/git-and-versioning.md).) This was written after committing on "are we ready to commit?" — a question, not an instruction.
 - **No secrets in code, logs, or output.** Never print, commit, or log credentials, tokens, or PII. (See [security](guidelines/security-privacy-logging.md).)
 - **The linter is the source of truth for style.** Run ESLint/Prettier (or the project's formatter); never argue formatting.
-- **Make it testable, and test it.** Design code so it can be tested; cover happy-path, edge, error, and security scenarios; new behavior isn't done until its tests pass. See [testing](guidelines/testing.md).
+- **Make it testable, and test it.** Design code so it can be tested; cover happy-path, edge, error, and security scenarios; new behavior isn't done until its tests pass. Tests are deterministic (no real clock, network, or order dependence). Run narrow while iterating, the full suite once at the end. See [testing](guidelines/testing.md).
+- **Performance is a default.** State the data size. One pass over the data, `Map`/`Set` lookups instead of nested scans, an index for every new query (added in the same change), no N+1, bounded reads, independent awaits in parallel. See [performance](guidelines/performance.md).
+- **Root cause, not retry.** On a failure: hypothesis, evidence, root cause, then a surgical fix. See [debugging](guidelines/debugging.md).
+- **Least-change vs best end-state:** when both exist, present both with tradeoffs and let the user choose (recommended first). Plans live in the project (`docs/plans/`). Define "done" as verifiable checks before coding. See [workflow](guidelines/workflow.md).
 - **Read the project's docs before non-trivial work.** `README*`, `CLAUDE.md`/`AGENTS.md`, other agents' rule files (`.cursor/rules/`, `.github/copilot-instructions.md`, `.windsurfrules`), `docs/`, `.env.example`, `CHANGELOG*`. Reconcile your plan with them before editing.
 - **Truth over agreement.** Be concise and direct. Don't reflexively validate the user as "right"; cross-check and base answers on first principles. Don't apologise reflexively.
 
 ## Heavy commands go through the queue
 
-Test runners, builds, type-checks and linters (`npm test`, `ng build`, `tsc`, `jest`, `pytest`, `docker build`, …) run through the machine-wide queue so parallel agents don't freeze the machine: `python3 "$HOME/.agent-workflows/bin/heavy.py" run --shell bash -- "<command>"` (`python` on Windows; `--shell powershell` from PowerShell). Where a hook does this automatically (Claude Code), just run the command normally. If the queue reports busy (exit 75), wait and retry or run it in the background. Never queue cheap commands (`grep`, `git`, `ls`, reading files) or long-running dev servers/watchers.
+Test runners, builds, type-checks and linters (`npm test`, `ng build`, `tsc`, `jest`, `pytest`, `docker build`, …) run through the machine-wide queue so parallel agents don't freeze the machine. The queue prints a structured summary (one line on success, the failures with `file:line` otherwise) and keeps the full log on disk: use the summary as evidence and search the log only for what it points to. `HEAVY_RAW=1` prints raw output instead. Command: `python3 "$HOME/.agent-workflows/bin/heavy.py" run --shell bash -- "<command>"` (`python` on Windows; `--shell powershell` from PowerShell). Where a hook does this automatically (Claude Code), just run the command normally. If the queue reports busy (exit 75), wait and retry or run it in the background. Never queue cheap commands (`grep`, `git`, `ls`, reading files) or long-running dev servers/watchers.
 
 ## Response tone — caveman (default on)
 

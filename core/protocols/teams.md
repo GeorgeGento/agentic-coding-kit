@@ -24,7 +24,7 @@ Persist to `findings.json` as each stage completes; never depend on an agent's r
 
 ## Model
 
-Pick agents by **tier**, not model name: spawn `senior | mid | junior` (see [hierarchy](hierarchy.md)); the profile maps each tier to a model. Default finders/verifiers to `mid`; `senior` for the hardest verification/synthesis, `junior` for mechanical sweeps. `--model` overrides with a tier or a harness model id.
+Pick agents by **role**, not model name: `executor`, the specialists (`reviewer`, `security`, `tester`, `e2e`, `ui-ux`), or `escalation` (see [hierarchy](hierarchy.md)); settings or the profile map each role to a model. Finders/verifiers default to the specialist for the lens; `escalation` for the hardest verification. `--model` overrides with a role or a harness model id.
 
 ## Scoped briefs (the orchestrator's job)
 
@@ -66,11 +66,11 @@ Stop at 0 open blockers, a **dry round** (no new confirmed findings two rounds r
 
 ## Workflow tool
 
-**Opt-in only.** Default to batched parallel subagent calls and validate their JSON yourself. Use a workflow/orchestration tool only in the **Hierarchy + workflows** session mode (see the Lead role) or when the user explicitly asks for one — fan-out runs are slow and token-expensive, and runs that die mid-way leave half-written edits. When opted in: pass the findings schema as its `schema` option (validation at the tool-call layer, agents retry on mismatch), gain resume-after-crash and token budgets, and use `isolation: 'worktree'` when agents mutate files in parallel. Default to `pipeline()` (per-item, no barrier); use a barrier only when a stage genuinely needs all prior results (dedup, early-exit on zero).
+**Opt-in only.** Default to batched parallel subagent calls and validate their JSON yourself. Use a workflow/orchestration tool only when the user explicitly asks for one — fan-out runs are slow and token-expensive, and runs that die mid-way leave half-written edits. When opted in: pass the findings schema as its `schema` option (validation at the tool-call layer, agents retry on mismatch), gain resume-after-crash and token budgets, and use `isolation: 'worktree'` when agents mutate files in parallel. Default to `pipeline()` (per-item, no barrier); use a barrier only when a stage genuinely needs all prior results (dedup, early-exit on zero).
 
 ## Implementing (mutation) — opt-in only
 
-Producing a plan is always safe. **Applying** changes mutates code — never do it without explicit opt-in (`--auto`, "implement it", "don't ask me"). When applying: order by `depends_on`, isolate independent changes in worktrees and merge, run the project's lint/build/tests after each logical group, fix regressions the tests catch, and summarize. (Per the [workflow](../guidelines/workflow.md) guideline: plan → confirm → implement.)
+Producing a plan is always safe. **Applying** changes mutates code — never do it without explicit opt-in (`--auto`, "implement it", "don't ask me"). When applying: order by `depends_on`, isolate independent changes (disjoint files, or worktrees per the [hierarchy](hierarchy.md) lifecycle), run the project's lint/build/tests after each logical group, fix regressions the tests catch, and summarize. (Per the [workflow](../guidelines/workflow.md) guideline: plan → confirm → implement.)
 
 ## Composing teams
 
@@ -78,4 +78,4 @@ Teams chain. The canonical composition is feature delivery (the *feature* task t
 
 ## Common flags
 
-`--agents N` · `--model senior|mid|junior` · `--verify all|blockers|none` · `--focus "..."` · `--auto` (mutating skills only). Defaults: **5 agents, mid, verify all, no auto**.
+`--agents N` · `--model <role>` · `--verify all|blockers|none` · `--focus "..."` · `--auto` (mutating skills only). Defaults: **5 read-only agents (code-changing ones capped by `max_parallel`), the lens's specialist, verify all, no auto**.

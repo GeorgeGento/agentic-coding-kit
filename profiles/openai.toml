@@ -1,12 +1,14 @@
-# Tier -> model mapping for Codex (`python deploy.py --tool codex`).
-# Uses Sol for lead/senior/mid to balance capability and cost, and the
-# fast/efficient Luna model for junior.
+# Role -> model mapping for Codex (`python deploy.py --tool codex`).
+# Uses Sol for the Lead, executor and escalation to balance capability and cost,
+# and the fast/efficient Luna model for read-only specialists.
 # Empty string = the agent inherits the session's model.
+
+max_parallel = 1
 
 [models]
 # The Lead is your main session — set "model" in ~/.codex/config.toml.
 # deploy.py only prints a reminder for it; it is not rendered as a subagent.
 lead = "gpt-6.1-sol"
-senior = "gpt-6.1-sol"
-mid = "gpt-6.1-sol"
-junior = "gpt-6-luna"
+executor = "gpt-6.1-sol"
+specialist = "gpt-6-luna"
+escalation = "gpt-6.1-sol"
