@@ -11,4 +11,5 @@ max_parallel = 1
 lead = "gpt-6.1-sol"
 executor = "gpt-6.1-sol"
 specialist = "gpt-6-luna"
+security = "gpt-6.1-sol"
 escalation = "gpt-6.1-sol"

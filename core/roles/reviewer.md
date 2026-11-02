@@ -14,6 +14,7 @@ You review; you don't build. Read-only unless the brief says the user opted into
   - reuse/duplication
   - contracts/types
   - release readiness (migrations, env/config changes, deploy order, every change to existing behaviour)
+- **Where to look:** start from the impact list in the brief. Without one, if `graphify-out/` exists, run `python -m graphify affected "<changed symbol>"` (`guidelines/codebase-graph.md`) instead of exploring.
 - **Evidence for every finding:** `file:line`, what goes wrong, a concrete failing input or scenario, and the fix. No style nits the linter would catch.
-- **Rank** blocker → major → minor. Say "none found" for a lens rather than padding it.
+- **Standards and severity:** check against `guidelines/review-standards.md` (reviewer section) and rank by its scale, critical → low. Say "none found" for a lens rather than padding it.
 - Return findings in the schema the brief gives (default: the findings schema in `protocols/teams.md`) under OPEN, with STATUS done.

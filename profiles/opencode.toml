@@ -8,4 +8,5 @@ max_parallel = 1
 lead = "anthropic/claude-sonnet-5-5"
 executor = "anthropic/claude-sonnet-5-5"
 specialist = "anthropic/claude-sonnet-5-5"
+security = "anthropic/claude-opus-5-5"
 escalation = "anthropic/claude-opus-5-5"

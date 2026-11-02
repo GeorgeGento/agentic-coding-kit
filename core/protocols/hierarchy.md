@@ -29,7 +29,7 @@ Don't delegate work smaller than the brief you'd write for it. Do read-only look
 
 ## Plans
 
-A plan task for an executor names exact file paths (and `file:line` anchors where known), the steps, and how to verify each step, so the executor doesn't explore. Don't write the complete code into the plan; that writes it twice.
+A plan task for an executor names exact file paths (and `file:line` anchors where known), the steps, and how to verify each step, so the executor doesn't explore. Don't write the complete code into the plan; that writes it twice. Prefer **small phases**, each ending at a commit point (the user commits), over one large batch.
 
 ## Brief (down)
 
@@ -38,7 +38,8 @@ Every delegation is a self-contained brief. The receiver has no other context.
 ```
 GOAL:        one sentence: the outcome, not the steps
 SCOPE:       files/dirs you may touch; anything outside requires escalation
-CONTEXT:     decisions, patterns to follow (file:line), pasted excerpts, guidelines that apply
+CONTEXT:     decisions, patterns to follow (file:line), pasted excerpts, guidelines that apply,
+             the `graphify affected` list for changed symbols when a graph exists
 ACCEPTANCE:  verifiable checks, e.g. "tests X pass", "endpoint returns 404 on missing id"
 CONSTRAINTS: data sizes / performance expectations, no new deps, conventions
 WORKTREE:    none (shared checkout) | agent/<task-slug>

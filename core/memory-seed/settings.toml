@@ -20,4 +20,4 @@
 # executor = "claude-sonnet-5-5"
 # specialist = "claude-sonnet-5-5"
 # escalation = "claude-opus-5-5"
-# security = "claude-sonnet-5-5"
+# security = "claude-opus-5-5"

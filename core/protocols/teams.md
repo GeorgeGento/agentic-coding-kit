@@ -41,7 +41,7 @@ An agent that asks "which files?" or returns freeform prose means the brief was 
 
 ```json
 { "id": "f-001", "file": "...", "line": 42, "title": "...",
-  "severity": "blocker | major | minor", "analysis": "...",
+  "severity": "critical | high | medium | low", "analysis": "...",
   "fix_before": "...", "fix_after": "...",
   "depends_on": ["<id>"], "new_risks": ["..."] }
 ```
@@ -50,7 +50,7 @@ Finders may leave `id` blank (orchestrator assigns on write). Verifiers return `
 
 ## Adversarial verify (the skeptic pass)
 
-For each new finding, spawn 2–3 verifiers whose job is to **refute it**: "Prove this is a false positive or the fix is wrong. Default to refuted if uncertain." Give each a distinct lens (correctness / security / does-it-actually-reproduce). Verdict: **0 refutes → confirmed, 1 → disputed (human call), ≥2 → refuted (dropped)**. This is what catches plausible-but-wrong findings and bad fixes a single pass would commit. `--verify all|blockers|none` scopes it — `blockers` verifies only blocker-severity findings and roughly halves cost on a big repo.
+For each new finding, spawn 2–3 verifiers whose job is to **refute it**: "Prove this is a false positive or the fix is wrong. Default to refuted if uncertain." Give each a distinct lens (correctness / security / does-it-actually-reproduce). Verdict: **0 refutes → confirmed, 1 → disputed (human call), ≥2 → refuted (dropped)**. This is what catches plausible-but-wrong findings and bad fixes a single pass would commit. `--verify all|blockers|none` scopes it — `blockers` verifies only critical and high findings and roughly halves cost on a big repo. Severity scale: [review-standards](../guidelines/review-standards.md).
 
 ## Completeness critic (for read/understand tasks)
 

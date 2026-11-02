@@ -45,6 +45,8 @@ The user's own memory lives in `{{MEMORY_DIR}}`. It is shared by every tool and 
 | Planning, workflow, TODO/docs upkeep, reviews | [`guidelines/workflow.md`](guidelines/workflow.md) |
 | Writing or running tests | [`guidelines/testing.md`](guidelines/testing.md) |
 | Any code touching data, loops, queries, I/O, or the frontend | [`guidelines/performance.md`](guidelines/performance.md) |
+| Understanding a large or unfamiliar codebase, the blast radius of a change, briefing agents without exploration | [`guidelines/codebase-graph.md`](guidelines/codebase-graph.md) |
+| Reviewing, auditing, or testing a change (severity scale, OWASP/ASVS, WCAG, test design) | [`guidelines/review-standards.md`](guidelines/review-standards.md) |
 | A failing test, a bug, or unexpected behavior | [`guidelines/debugging.md`](guidelines/debugging.md) |
 | Spawning executors/specialists, worktrees, `max_parallel` | [`protocols/hierarchy.md`](protocols/hierarchy.md) |
 | Multi-agent work: feature, analyze, review, security, implement, test, refactor | [`protocols/task-types.md`](protocols/task-types.md) + [`protocols/teams.md`](protocols/teams.md) |

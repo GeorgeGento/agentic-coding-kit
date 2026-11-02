@@ -49,8 +49,13 @@ Make success criteria verifiable and cover them with tests — treat tests as pa
 ## Documentation operations
 
 - Before non-trivial work, read existing docs (`README*`, `CLAUDE.md`/`AGENTS.md`, other agents' rule files such as `.cursor/rules/`, `.github/copilot-instructions.md`, `.windsurfrules`, `docs/`, `.env.example`, `CHANGELOG*`) and reconcile your plan with them. This is non-destructive discovery — never ask first. If docs conflict with code, note the discrepancy rather than trusting one silently.
-- Update README / About / changelog when behavior, setup, commands, env vars, or security controls change.
-- Every changelog entry has a **Changes to existing behaviour** section: each change, and what to watch after deploy (what could break, what to check). "None" is stated explicitly.
+- Update README / About when behavior, setup, commands, env vars, or security controls change.
+- **Changelog = one fragment per change, never a hand-edited CHANGELOG.** Write `changes/<yyyy>/<mm>/<yyyy-mm-dd>-<slug>.md`:
+  - Front matter: `packages: [...]` (or the app area), `type: feat | fix | breaking | security | internal`, and `released: <version>` once released.
+  - Body: `# Title`, a few lines on what changed and why (for the people using it), and a **Changes to existing behaviour** section: each change, and what to watch after deploy (what could break, what to check). Write "None" explicitly when there are none.
+  - The folder doubles as the dated work history. No shared file grows forever, and parallel work never conflicts.
+  - **Releases** (libraries/packages): the release step collects unreleased fragments into the release notes and a generated version section in each package's `CHANGELOG.md` (latest ~5 versions, older ones archived per year), then marks the fragments `released: <version>` and keeps them. Apps without published packages only keep the folder.
+  - A project's own convention (its `CLAUDE.md`/`AGENTS.md`, changesets, towncrier) wins. Otherwise propose this scheme.
 - **Plans live in the project**: `docs/plans/<topic>-plan.md` (or the project's own convention) — never only in a home-dir or harness-internal location. Open decisions the user must answer go in a separate `<topic>-decisions.md` linked from the plan. Finished reference docs stay at the top level of `docs/`.
 - **Keep progress docs current**: when a planned item lands and passes its checks, update its plan/progress doc in the same turn (status, date, evidence).
 - **Repo markdown by default**: write specs, plans, and write-ups as markdown in the repo. Don't publish them to external page/doc services unless the user asks in that message.

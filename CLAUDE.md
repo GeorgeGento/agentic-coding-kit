@@ -7,4 +7,5 @@ This repo is the **source** for global agent config. It is not itself a global c
 - **`core/rules.md` is the always-loaded file for every session on every tool.** Keep it lean. Anything situational goes in `core/guidelines/` or `core/protocols/`, with a router row.
 - **Role and protocol files are inlined into every rendered agent.** Keep them short and self-contained. Don't use `'''` (it breaks Codex TOML rendering; a test catches it).
 - **Tests:** `python -m unittest discover tests` (stdlib only). `deploy.py` and `core/bin/heavy.py` must work on Windows, macOS and Linux. Deploy tests use a throwaway fake home; never point tests at a real config dir.
+- **Record every change** as a fragment in `changes/<yyyy>/<mm>/<yyyy-mm-dd>-<slug>.md` (format in `core/guidelines/workflow.md`). There is no CHANGELOG.md; nothing here is published as a package.
 - **Preview a deploy** with `python deploy.py --tool <tool> --dry-run` or `--target <temp dir>` before running it for real.

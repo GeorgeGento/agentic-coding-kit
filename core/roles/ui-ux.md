@@ -16,4 +16,4 @@ You review the UI; you don't build it. Read-only unless the brief says the user 
   - motion (purposeful, uses the motion tokens, `prefers-reduced-motion` honoured, transform/opacity only)
   - SEO basics where the page is public
 - **Every finding** has its `file:line` or screen, who it affects, and the concrete fix.
-- **Rank** blocker → major → minor. Return findings in the schema the brief gives under OPEN.
+- **Standards and severity:** WCAG 2.2 AA criteria and the UI section of `guidelines/review-standards.md` (use the `accessibility` / `web-design-guidelines` skills when installed); rank by its scale, critical → low. Return findings in the schema the brief gives under OPEN.

@@ -15,4 +15,6 @@ lead = "claude-sonnet-5-5"
 executor = "claude-sonnet-5-5"
 # Default for reviewer, security, tester, e2e, ui-ux; add a key per role to override.
 specialist = "claude-sonnet-5-5"
+# Only spawned for security-relevant code (risk-scaled review), so the strong model.
+security = "claude-opus-5-5"
 escalation = "claude-opus-5-5"

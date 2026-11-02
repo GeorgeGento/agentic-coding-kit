@@ -15,7 +15,7 @@ One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows
 | Path | What |
 | --- | --- |
 | `core/rules.md` | Global always-on rules + the "when to read what" router. Rendered as `CLAUDE.md` / `AGENTS.md` |
-| `core/guidelines/` | Topic rules: coding-standards (loads every session), plus workflow, testing, performance, debugging, motion-3d, ui-testing-platforms, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, library-design, ux-ui-seo (on demand; their must-dos are a checklist in `rules.md`) |
+| `core/guidelines/` | Topic rules: coding-standards (loads every session), plus workflow, testing, performance, debugging, review-standards, codebase-graph, motion-3d, ui-testing-platforms, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, library-design, ux-ui-seo (on demand; their must-dos are a checklist in `rules.md`) |
 | `core/guidelines/languages/` | Language-specific rules (on demand): `README.md` index → one file per language (`javascript-typescript.md`, …) |
 | `core/roles/` | `lead` (your main session, loads every session); `executor`, `escalation` and the specialists `reviewer` / `security` / `tester` / `e2e` / `ui-ux` (rendered as subagents) |
 | `core/protocols/` | `hierarchy.md` (roles, briefs, the two-stage audit, worktree lifecycle; read by the Lead) · `agent-protocol.md` (the short part inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
@@ -149,4 +149,4 @@ A skill is a folder with a `SKILL.md` (frontmatter: `name`, `description`). Clau
 
 ## Editing
 
-Edit files in `core/` (or `adapters/`, `profiles/`), run `python -m unittest discover tests`, then re-deploy. Keep `core/rules.md` lean: put deep, situational rules in `core/guidelines/` or `core/protocols/` and let the router point to them. Rules for working *on* this repo are in [`CLAUDE.md`](CLAUDE.md).
+Edit files in `core/` (or `adapters/`, `profiles/`), run `python -m unittest discover tests`, record the change as a fragment in `changes/<yyyy>/<mm>/`, then re-deploy. Keep `core/rules.md` lean: put deep, situational rules in `core/guidelines/` or `core/protocols/` and let the router point to them. Rules for working *on* this repo are in [`CLAUDE.md`](CLAUDE.md).

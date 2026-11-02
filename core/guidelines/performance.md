@@ -42,4 +42,4 @@ Read before writing or reviewing any code. **Performance is a default, not a lat
 
 ## Reviewing for performance
 
-Auditors check every change for: loops over the same data that could merge, lookups inside loops, queries without a serving index, N+1, unbounded reads/caches, sequential independent awaits. A missing index on a new production query is a **major** finding, not a nit.
+Auditors check every change for: loops over the same data that could merge, lookups inside loops, queries without a serving index, N+1, unbounded reads/caches, sequential independent awaits. A missing index on a new production query is a **high** finding, not a nit.

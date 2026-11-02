@@ -52,6 +52,8 @@ class ClaudeCodeDeployTests(DeployCase):
         self.assertIn(f"]({self.target.as_posix()}/guidelines/debugging.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/motion-3d.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/ui-testing-platforms.md)", text)
+        self.assertIn(f"]({self.target.as_posix()}/guidelines/review-standards.md)", text)
+        self.assertIn(f"]({self.target.as_posix()}/guidelines/codebase-graph.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/git-and-versioning.md)", text)
         self.assertNotIn("](guidelines/", text)
 
@@ -66,7 +68,8 @@ class ClaudeCodeDeployTests(DeployCase):
         self.assertIn("model: claude-opus-5-5", escalation)
         for role in deploy.SPECIALIST_ROLES:  # specialists fall back to the `specialist` model
             text = (self.target / "agents" / f"{role}.md").read_text(encoding="utf-8")
-            self.assertIn("model: claude-sonnet-5-5", text, role)
+            expected = "claude-opus-5-5" if role == "security" else "claude-sonnet-5-5"
+            self.assertIn(f"model: {expected}", text, role)
         self.assertFalse((self.target / "agents" / "lead.md").exists())
 
     def test_retired_tier_agents_are_backed_up_and_removed(self):
@@ -232,7 +235,8 @@ class CodexDeployTests(DeployCase):
         self.assertOk(result)
         models = deploy.load_profile("openai")
         expected = {"executor": models["executor"], "escalation": models["escalation"],
-                    **{role: models["specialist"] for role in deploy.SPECIALIST_ROLES}}
+                    **{role: models.get(role, models["specialist"])
+                       for role in deploy.SPECIALIST_ROLES}}
         for role, model in expected.items():
             agent = tomllib.loads(
                 (self.target / "agents" / f"{role}.toml").read_text(encoding="utf-8"))

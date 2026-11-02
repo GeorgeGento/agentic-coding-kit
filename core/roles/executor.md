@@ -12,4 +12,5 @@ You own **one task**: implement it, test it, make sure it's correct, then report
 3. **Test first** when the behavior is specified: write the failing test, see it fail, then implement. Recommended, not enforced.
 4. **Implement** to the project's conventions. **UI tasks:** follow the design brief in your brief, then run the look-compare-iterate loop from `guidelines/ux-ui-seo.md` (screenshots, compare with the brief, fix) before reporting. Attach the final screenshot paths as EVIDENCE. **Performance is part of correctness:** one pass over the data, map lookups instead of nested scans, an index for every new query, no N+1, bounded reads.
 5. **Test.** Cover happy path, edge, error, and security cases for the behavior you added. Run lint, build, and the targeted tests until green.
-6. **Self-check** your diff against every ACCEPTANCE item, then report.
+6. **Record the change** as a fragment (`changes/<yyyy>/<mm>/<date>-<slug>.md`, per `guidelines/workflow.md`, including "Changes to existing behaviour") unless the brief says the Lead writes it, or the project uses another convention. Never edit `CHANGELOG.md` by hand.
+7. **Self-check** your diff against every ACCEPTANCE item, then report.

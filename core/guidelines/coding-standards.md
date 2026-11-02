@@ -4,7 +4,10 @@ General, language-agnostic standards for writing and editing code. Read this bef
 
 ## Core principles
 
-- **No code duplication** unless genuinely required — i.e. two things that *look* alike but are semantically independent and will evolve separately. Extract shared logic into utilities, base classes, or reusable components.
+- **No code duplication** unless genuinely required — i.e. two things that *look* alike but are semantically independent and will evolve separately. Extract shared logic into utilities, base classes, or reusable components. **Extract on the third repeat at the latest:** a block shape seen 3+ times (e.g. resolve → check → throw → call) becomes a helper in the same change.
+- **Grep before writing a parser, table, or allow-list.** Reuse or promote the existing one. The only deliberate copies are ones where each side must enforce independently (e.g. a Rust/TS pair), documented as such.
+- **No abstraction without a second user.** No interface / port / abstract class without a second implementation or a test fake that needs it (say which in one line). No factory that only returns `inject(X)`.
+- **Derive key lists** from the type or a const object (`as const` / `satisfies`); never hand-maintain a parallel list.
 - **Modularity and reusability first.** Design every new piece so it can be reused, not welded to its first consumer.
 - **Long-term maintainability** outweighs short-term convenience. Prefer the design that will still make sense in a year.
 - **Single Responsibility.** Each function, class, and component has one reason to change. Split large units into smaller composable ones.
@@ -23,6 +26,8 @@ General, language-agnostic standards for writing and editing code. Read this bef
 
 - **Never delete or rewrite existing comments** except to correct one that is wrong or unclear; preserve the original intent.
 - Add comments for non-obvious logic, side effects, and "why" decisions. Never add comments that just restate the code.
+- Doc comments: a one-line summary per public symbol. `@param` / `@returns` / `@description` only when they add information the name and type don't; `@example` only for non-obvious APIs.
+- None of the leanness rules above may weaken security checks, fail-closed validation, or test coverage.
 
 ## Proactive hidden-issue detection
 
