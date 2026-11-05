@@ -21,7 +21,7 @@ One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows
 | `core/protocols/` | `hierarchy.md` (roles, briefs, the two-stage audit, worktree lifecycle; read by the Lead) · `agent-protocol.md` (the short part inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
 | `core/skills/` | Harness-neutral skills (`ionic-capacitor`, vendored) |
 | `core/bin/` | `heavy.py` (heavy-command queue) + `heavy_parsers.py` (output summaries) · `worktrees.py` (agent worktree list/apply/clean). Python stdlib only |
-| `adapters/claude-code/` | Claude-only extras: the `/setup` skill |
+| `adapters/claude-code/` | Claude-only extras: the `/setup` skill, `bin/session_cost.py` (token use per session and agent from the local logs) |
 | `adapters/opencode/` | opencode plugin that routes heavy commands to the queue |
 | `profiles/*.toml` | Role → model defaults and `max_parallel`: `claude`, `openai` (Codex), `opencode`, `local` |
 | `deploy.py` | Renders and installs everything for one tool |
@@ -106,6 +106,16 @@ python3 ~/.agent-workflows/bin/heavy.py run --shell bash -- "npm test"        # 
 | `HEAVY_RAW` | unset | `1` = raw output, no summary |
 
 Claude Code: the hook rewrites matching `Bash`/`PowerShell` commands. Normal permission prompts still apply to the rewritten command.
+
+## Where the tokens go (Claude Code)
+
+```sh
+python ~/.agent-workflows/bin/session_cost.py                     # last 10 sessions, all projects
+python ~/.agent-workflows/bin/session_cost.py --project myapp --last 3
+python ~/.agent-workflows/bin/session_cost.py --session <id> --json
+```
+
+Per session and per agent: turns, the first call's context size (the fixed cost every session pays), fresh input, cache writes and reads, output, one comparable "input-equivalent" number weighted by API price ratios, and which tools' results filled the context. It reads the local logs only; use it before and after a rule change to see whether it helped.
 
 ## Agent worktrees
 

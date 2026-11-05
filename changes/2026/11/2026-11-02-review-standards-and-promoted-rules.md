@@ -15,6 +15,9 @@ General rules that lived in personal memory now ship with the rules, so every pr
 - **Agents:** reports capped at about 30 lines; dev servers are never stopped or restarted, and tests never share their ports or databases; plans prefer small phases.
 - **Changelog fragments:** one dated file per change instead of a hand-edited CHANGELOG; executors write them and releases generate the changelogs.
 - **Profiles:** the security specialist runs on the strong model.
+- **Loop guard and working commands** (ideas from microsoft/TokenEconomizer, as rules, not a dependency): the same failure three times means stop and ask or escalate; a corrected command form that works is recorded once in the project's `CLAUDE.md`.
+- **`session_cost.py`** (Claude Code adapter): token use per session and per agent from the local logs: turns, fixed context, cache reads/writes, output, and the tools that filled the context. First run: about 44k tokens of fixed context per agent (rules are about 6k of it), and turn count dominates cost.
+- **Context budget test:** a deploy test fails when the always-loaded instructions exceed 26 KB or an agent file exceeds 4 KB.
 - **Finishing a task:** the Lead's report ends with a change description, a ready-to-paste commit message, and the fragment path. It still never commits on its own.
 
 ## Changes to existing behaviour

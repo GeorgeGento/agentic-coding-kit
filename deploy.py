@@ -480,6 +480,12 @@ class Deployer:
             dest = self.shared / "bin" / name
             self._backup(dest)
             self._place(CORE / "bin" / name, dest)
+        # Harness-specific helpers (e.g. Claude Code's session log reader) live in the adapter.
+        adapter_bin = ADAPTERS / self.tool.name / "bin"
+        for src in sorted(adapter_bin.glob("*.py")) if adapter_bin.is_dir() else []:
+            dest = self.shared / "bin" / src.name
+            self._backup(dest)
+            self._place(src, dest)
 
     def deploy_plugin(self) -> None:
         content = render_opencode_plugin(OPENCODE_PLUGIN.read_text(encoding="utf-8"),

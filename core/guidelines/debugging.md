@@ -15,6 +15,7 @@ Read when a test fails, a bug is reported, or behavior surprises you. **Find the
 
 - Never change code "to see if it helps". Each edit tests a stated hypothesis.
 - Two failed hypotheses in a row: stop, list what you know and what you ruled out, and widen the search (or escalate) instead of a third guess.
+- **Loop guard:** the same failure (same error, same test) three times in a turn means stop. Report what was tried and ask or escalate; a fourth attempt at the same thing is never the answer.
 - Never weaken an assertion, add a retry, or catch-and-ignore to make a test pass.
 - Flaky? Re-run the single test once to confirm the flake, then find the nondeterminism (time, order, shared state, network, waiting on timers instead of conditions).
 - Remove temporary logs and assertions before reporting.

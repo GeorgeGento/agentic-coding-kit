@@ -90,7 +90,7 @@ class ClaudeCodeDeployTests(DeployCase):
                     "protocols/task-types.md", "protocols/agent-protocol.md", "roles/lead.md",
                     "skills/ionic-capacitor/SKILL.md", "skills/setup/SKILL.md", "README.md"):
             self.assertTrue((self.target / rel).exists(), rel)
-        for name in deploy.BIN_SCRIPTS:
+        for name in (*deploy.BIN_SCRIPTS, "session_cost.py"):  # + Claude Code adapter script
             self.assertTrue((self.home / ".agent-workflows" / "bin" / name).exists(), name)
 
     def test_session_start_hook_reports_leftover_worktrees(self):
@@ -250,6 +250,7 @@ class CodexDeployTests(DeployCase):
         self.assertFalse((self.target / "skills" / "setup").exists())  # Claude-only skill
         self.assertFalse((self.target / "settings.json").exists())
         self.assertTrue((self.home / ".agent-workflows" / "bin" / "heavy.py").exists())
+        self.assertFalse((self.home / ".agent-workflows" / "bin" / "session_cost.py").exists())
 
 
     def _lock_dir(self):
@@ -499,6 +500,33 @@ class ArgumentTests(DeployCase):
         result = self.deploy("claude-code", self.home / ".claude", "--max-parallel", "0")
         self.assertEqual(result.returncode, 1)
         self.assertIn("--max-parallel must be at least 1", result.stdout)
+
+
+class ContextBudgetTests(DeployCase):
+    """Every session pays for the always-loaded files; keep them from silently bloating."""
+    # Rendered CLAUDE.md + its @imports + the seeded MEMORY.md, in bytes (~4 bytes per token).
+    # Raise only on purpose, after trimming elsewhere was considered.
+    ALWAYS_LOADED_BUDGET_BYTES = 26_000
+    AGENT_FILE_BUDGET_BYTES = 4_000
+
+    def test_always_loaded_instructions_stay_within_budget(self):
+        target = self.home / ".claude"
+        self.assertOk(self.deploy("claude-code", target))
+        files = [target / "CLAUDE.md", *(target / rel for rel in deploy.ALWAYS_LOADED),
+                 self.home / ".agent-memory" / "MEMORY.md"]
+        # Rendered links embed the absolute home path; normalise it so the size
+        # doesn't depend on where the (temp) home lives.
+        text = "".join(p.read_text(encoding="utf-8") for p in files)
+        size = len(text.replace(self.home.as_posix(), "~").encode("utf-8"))
+        self.assertLessEqual(size, self.ALWAYS_LOADED_BUDGET_BYTES,
+                             f"always-loaded context is {size} bytes; trim rules or move them on demand")
+
+    def test_each_agent_file_stays_within_budget(self):
+        target = self.home / ".claude"
+        self.assertOk(self.deploy("claude-code", target))
+        for agent in (target / "agents").glob("*.md"):
+            size = len(agent.read_bytes())
+            self.assertLessEqual(size, self.AGENT_FILE_BUDGET_BYTES, f"{agent.name} is {size} bytes")
 
 
 class ResolveSettingsTests(unittest.TestCase):
