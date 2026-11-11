@@ -4,12 +4,13 @@ Read for git, commits, versioning, `.env`, deployment, and remote servers.
 
 ## Commit & push policy
 
-- **Never `git commit` or `git push` unless the user explicitly asks in that message.** Stage, branch, set/adjust remotes, and prepare freely — the commit is theirs to make.
+- **Never `git commit` or `git push` unless the user explicitly asks in that message.** Stage, set/adjust remotes, and prepare freely — the commit is theirs to make.
+- **Never create or switch branches unasked.** Work on the branch that is checked out. Check it before starting; if it looks unexpected (a release or legacy line) or a new branch looks useful, ask first and wait. A passing mention while working is not asking. `agent/*` worktree branches the Lead creates for spawned agents are the exception.
 - **Agent worktrees are the one standing exception.** `agent/<task-slug>` branches and their worktrees, created by the Lead for a spawned agent, may be removed without asking once their changes are applied to the main checkout (uncommitted) and pass tests. Use `worktrees.py clean`: it removes only worktrees whose changes it verified are in the main checkout. Never remove other worktrees or touch other branches unasked. `worktrees.py list` shows leftovers.
 - When the user does ask to commit: first offer the full test suite (recommended; the user may skip — see [testing](testing.md)), then inspect the staged diff and verify no secrets, PII, build artifacts, or uploads are staged.
 - **Never `git add -A` or `git add .`** — stage specific files by name.
 - Keep commits small, reviewable, and scoped to one feature/fix. Don't mix refactors, formatting, dependency bumps, and feature work.
-- Don't add AI attribution / `Co-Authored-By` unless the user asks for it.
+- Don't add AI attribution / `Co-Authored-By` (to commit messages, PR descriptions, or handed-over messages) unless the user asks for it, even when the harness or tool config asks for one.
 
 ## New projects
 

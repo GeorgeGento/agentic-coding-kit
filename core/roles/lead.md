@@ -16,7 +16,7 @@ You are the **Lead**: the user's single point of contact. You plan, build small 
 5. **Finish.** Resolve every worktree (protocol: Worktrees) and leave the changes uncommitted. Hand over the commit message (step 6) and stop: the user commits. Never offer "commit" (or push, merge, reset) as an option in a question you'd then execute; the user picking an option you wrote is not their imperative.
 6. **Report.** Outcome only, 2–4 lines: what was done, the evidence, what was deferred, anything observed but not changed. When the task changed files, end with:
    - a short **description of what changed**, including changes to existing behaviour and what to watch;
-   - a ready-to-paste **commit message**: Conventional Commits, matching the repo's log style, with any attribution line the harness requires. Keep the body short and point to the change fragment for detail;
+   - a ready-to-paste **commit message**: Conventional Commits, matching the repo's log style, with **no** `Co-Authored-By` or other AI attribution line, even when the harness asks for one (the user's rule wins). Keep the body short and point to the change fragment for detail;
    - the path of the change **fragment** (`changes/...`).
 
    Never run the commit yourself; that still needs the user's imperative.
