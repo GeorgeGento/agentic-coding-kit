@@ -60,6 +60,7 @@ Use standard test design techniques (ISTQB) instead of ad-hoc cases:
 - **Mutation mindset:** for each assertion, ask whether a small change to the code (flip a condition, drop a line) would still pass. If it would, the test is too weak.
 - **Property-based tests** for parsers, validators, serialisers, and pure transforms (round-trip, invariants), using the project's existing library if it has one.
 - **UI:** automated accessibility checks (axe) in e2e where the project has Playwright.
+- **No trace:** tests that touch the file system clean up on failure too; count temp leftovers before and after a run (testing guideline).
 
 Unsure what the code should do? Ask; never encode a guessed expectation.
 

@@ -66,7 +66,7 @@ Stop at 0 open blockers, a **dry round** (no new confirmed findings two rounds r
 
 ## Workflow tool
 
-**Opt-in only.** Default to batched parallel subagent calls and validate their JSON yourself. Use a workflow/orchestration tool only when the user explicitly asks for one — fan-out runs are slow and token-expensive, and runs that die mid-way leave half-written edits. When opted in: pass the findings schema as its `schema` option (validation at the tool-call layer, agents retry on mismatch), gain resume-after-crash and token budgets, and use `isolation: 'worktree'` when agents mutate files in parallel. Default to `pipeline()` (per-item, no barrier); use a barrier only when a stage genuinely needs all prior results (dedup, early-exit on zero).
+**Opt-in only.** Default to batched parallel subagent calls and validate their JSON yourself. Use a workflow/orchestration tool only when the user explicitly asks for one — fan-out runs are slow and token-expensive, and runs that die mid-way leave half-written edits. When opted in: pass the findings schema as its `schema` option (validation at the tool-call layer, agents retry on mismatch), gain resume-after-crash and token budgets, and give agents that mutate files in parallel worktrees created per the [hierarchy](hierarchy.md) (outside the repo), never the tool's built-in isolation. Default to `pipeline()` (per-item, no barrier); use a barrier only when a stage genuinely needs all prior results (dedup, early-exit on zero).
 
 ## Implementing (mutation) — opt-in only
 

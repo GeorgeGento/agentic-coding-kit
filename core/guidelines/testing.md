@@ -33,6 +33,7 @@ Many unit, fewer integration, fewest E2E.
 ## Practices
 
 - **Tests are part of "done":** implement → test → verify → then commit on request. Never declare new behavior complete with missing or failing tests.
+- **Tests leave no trace.** Every temp file or folder a test or test helper creates is removed when the test ends, **pass or fail**. Name temp entries with a recognisable per-package prefix (e.g. `<project>-<area>-...`). A helper that hands out paths by value puts them under one parent folder of its own and sweeps that parent's stale entries (older than ~1 h, so parallel runs are safe) on first use. **Verify, don't assume:** count the suite's temp entries (by prefix) before and after a run; anything new is a leak. Never fix a leak by clearing the user's temp folder at large: fix the test. Language pitfalls: [rust](languages/rust.md).
 - **Deterministic only:** no reliance on real wall-clock time, randomness, network, or test order. Fake the clock, seed randomness, mock external services, isolate state between tests (fresh fixtures, no shared mutable state).
 - **Name by behavior** ("returns 401 when token missing"); arrange–act–assert; keep each test focused.
 - **Realistic fake data only** — never real PII or production data in fixtures (see [security](security-privacy-logging.md)).

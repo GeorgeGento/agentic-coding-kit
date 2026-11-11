@@ -4,6 +4,7 @@ Read before adding animation, scroll effects, transitions, canvas/WebGL, or thre
 
 ## Direction first
 
+- Which look and which effect belong where (app work screens vs app moments vs marketing pages, Android) is in [design-directions](design-directions.md); this file is how to build them well.
 - Motion follows the **design brief** ([ux-ui-seo](ux-ui-seo.md#design-direction)): what moves, why, how fast, which easing. Every animation has a job: guide attention, show cause and effect, keep context across a change, or add one signature moment. No job, no animation.
 - **One signature moment per screen** (a hero reveal, a 3D scene, a shared-element transition), with everything else calm. Uniform motion on every element reads as template.
 - Define motion tokens once: durations (e.g. 120 / 240 / 400 ms), 2–3 named easings, and the stagger step. Reuse them; no one-off `0.37s ease-in-out`.

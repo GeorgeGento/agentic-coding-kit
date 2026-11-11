@@ -84,7 +84,10 @@ Parallel agents share one checkout with disjoint SCOPE by default. Use a git wor
 
 The script is `python "$HOME/.agent-workflows/bin/worktrees.py"` (`python` on Windows), run from inside the repo.
 
-1. **Before creating:** at most `max_parallel` worktrees; run `worktrees.py check-disk` (exit 1 = below `min_free_disk_gb`, default 10). If disk is low, run in the main checkout or ask. Branch: `agent/<task-slug>`. Dependencies get a fresh install inside the worktree.
+1. **Before creating:** at most `max_parallel` worktrees; run `worktrees.py check-disk` (exit 1 = below `min_free_disk_gb`, default 10). If disk is low, run in the main checkout or ask.
+   - **Location: outside every repo**, at the workspace root (the repo's parent folder): `git -C <repo> worktree add <workspace>/.worktrees/<repo>-<task> -b agent/<task>`. Create it by hand and give the agent its absolute path.
+   - **Never use a harness's built-in worktree isolation** (e.g. Claude Code `isolation: "worktree"`): it nests the worktree inside the repo, where it can be committed as a gitlink and leak into the repo's test runs, and it picks the repo from the session's working directory. Keep `.claude/worktrees/` in each repo's `.gitignore` as a safety net.
+   - **Dependencies:** junction/symlink `node_modules` to the main checkout's (deps unchanged by the task) and point the repo's own workspace packages at the worktree; install fresh only when the task changes dependencies. If the dev server then loads a second copy of a framework (Angular `NG0203`), hard-copy instead (see library-design). Compiled languages use the shared worktree build folder (e.g. Rust: [languages/rust](../guidelines/languages/rust.md)).
 2. **Baseline:** the executor runs the targeted tests once before editing and records any failures that already exist.
 3. **Apply, don't merge:** after the audit, `worktrees.py apply <path>` copies the worktree's changes (untracked files included) into the main checkout as uncommitted changes. History stays untouched; commits remain the user's.
 4. **Test in the main checkout.** On failure the worktree stays, and the rework goes to the same agent.
@@ -95,7 +98,8 @@ The script is `python "$HOME/.agent-workflows/bin/worktrees.py"` (`python` on Wi
 ## Mechanics
 
 - **Spawning:** Claude Code: `subagent_type: executor | escalation | reviewer | security | tester | e2e | ui-ux`. If the harness can't spawn, run the roles sequentially yourself: plan, build, then audit against the written acceptance.
-- **Continuity:** rework, including auditors' findings, goes to the *same* agent (Claude Code: `SendMessage` to its id). Specialists are always separate agents from the builder.
+- **Continuity, sized:** a quick bounce (audit defects, a small fix) goes to the *same* agent while its context is small (Claude Code: `SendMessage` to its id). Once a builder has a long history (roughly 100+ turns), or the work is a new follow-up rather than a fix, start a **fresh small builder** with the defect list and file paths pasted in: resuming a large agent re-reads all its old output on every call. Specialists are always separate agents from the builder.
+- **One builder per coherent chunk** with a tight brief, rather than one long-running builder for many chunks.
 - **One gate.** Agents verify their slice with targeted suites. The Lead runs the full gate once at the end. When suites share a test DB, two DB-backed e2e/UI suites never run at once.
 - **Heavy commands** (tests, builds, type-checks, linters) go through the machine-wide queue, which prints a structured summary and keeps the full log on disk. Paste the summary as EVIDENCE. On failure, open the referenced `file:line` or search the log; never read the whole log back. Re-run only the failing test file. In Claude Code a hook wraps the commands automatically; elsewhere: `python3 "$HOME/.agent-workflows/bin/heavy.py" run --shell bash -- "<command>"`. Exit 75 means the queue is busy: wait and retry.
 - **Shared state** for multi-agent runs lives in `.team/` (`context.md`, `plan.md`), per [team mechanics](teams.md). The delegator is the single writer.

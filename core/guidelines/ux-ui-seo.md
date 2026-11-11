@@ -6,7 +6,7 @@ Read for building UI, components, accessibility, and public-page SEO.
 
 Generic output ("AI slop": purple gradients, default Inter, centered card grids, fade-in on everything) comes from building without a direction and without looking at the result. Fix both.
 
-- **Brief before UI code.** For any new screen or visual redesign, write a short design brief and get it approved with the plan:
+- **Brief before UI code.** For any new screen or visual redesign, write a short design brief and get it approved with the plan. Start from a direction and the context's motion budget in [design-directions](design-directions.md):
   - **Direction:** one sentence on the aesthetic (e.g. "editorial, high-contrast, generous whitespace"), plus 2–3 concrete references (sites or apps) and what to take from each.
   - **Type:** typeface pairing and scale (sizes, weights, line heights). Pick on purpose; don't default to the system or Inter.
   - **Color:** palette as tokens, with an accent used sparingly; light and dark.
@@ -69,7 +69,8 @@ Generic output ("AI slop": purple gradients, default Inter, centered card grids,
 
 ## Verifying in the running app
 
-- **Dev server: ask, don't assume.** If a check needs the dev server, prompt the user (structured question if the harness has one): you start it (in the background), or they run it and tell you when it's up. Never start a second one if the user already runs one.
+- **Dev server: ask, don't assume.** If a check needs the dev server and none is running, prompt the user (structured question if the harness has one): you start it (in the background), or they run it and tell you when it's up. Never start a second one if the user already runs one.
+- **Restarting the user's running dev app to load your changes needs no confirmation (the Lead only):** stop only that app's dev processes (its window, its dev server, its launch task), relaunch in the background without a blocking wait, and say when it's up. Still ask before touching app data or stopping anything else. Subagents never stop or restart dev servers.
 - **Every UI-touching change is verified in a real browser before it's done, scoped to what you touched.** Run the API on the throwaway test DB (via an env override, never the dev DB) and the frontend, following the dev-server rule above. In headless Chromium/Playwright, drive only the changed component/feature and the flows that directly use it. For a shared kit component, that means one or two representative screens, not every consumer. No full-app sweeps per change: the full visual/UI suite runs once at the gate. Check console errors, failed requests, and layout at 390px and desktop, in light and dark. Unit tests, HTTP e2e and curl'ing SSR HTML don't count. Prefer committed visual-flow specs that screenshot each step into `.output/`, and look at the screenshots before reporting. Never print credentials, and stop every server you started.
 - **Stale state before code bugs.** When the running app doesn't match your edit, first rule out stale state: dev-server hot reload, browser cache, SSR/translation caches, or an external cache (e.g. Redis) that survives restarts and deploys. Confirm via a build, the actually-served bundle, or a cold (uncached) run; ask the user for a hard refresh or restart. Never flush a shared cache (`FLUSHALL`/`FLUSHDB`) — delete only the specific keys, with approval.
 

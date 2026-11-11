@@ -54,6 +54,7 @@ class ClaudeCodeDeployTests(DeployCase):
         self.assertIn(f"]({self.target.as_posix()}/guidelines/ui-testing-platforms.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/review-standards.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/codebase-graph.md)", text)
+        self.assertIn(f"]({self.target.as_posix()}/guidelines/design-directions.md)", text)
         self.assertIn(f"]({self.target.as_posix()}/guidelines/git-and-versioning.md)", text)
         self.assertNotIn("](guidelines/", text)
 
