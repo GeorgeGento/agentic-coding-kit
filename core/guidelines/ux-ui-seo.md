@@ -15,8 +15,33 @@ Generic output ("AI slop": purple gradients, default Inter, centered card grids,
   - **Signature moment:** the one thing that makes this screen memorable.
 
   In an existing product, the brief is mostly "follow the design system". Only list what's new.
+- **One brief per project, kept in the repo:** `docs/design-brief.md` (or the project's convention). It is the standing source for every UI task, so a plan's brief only adds what's new for that feature. Read it before any UI work; paste the relevant parts into executor and `ui-ux` briefs. A project with UI and no brief gets one, approved by the user, before its next visual change.
 - **Respect the existing brand and kit.** A brief extends the design system; it never forks it. If the brief needs a new primitive, add it to the kit.
-- **Look, compare, iterate.** After building, screenshot the screen at 390px, ~768px, and desktop (dark mode, where it exists, in its own round), look at the images, and compare them against the brief: hierarchy, spacing rhythm, alignment, type, contrast, and the signature moment. Fix what's off, then re-shoot. Cap it at about 3 screenshots per round and 3 rounds; each image costs tokens. Write screenshots to `.output/screenshots/` (e.g. `npx playwright screenshot --viewport-size=390,844 <url> .output/screenshots/x-390.png`). Desktop and mobile apps: see [ui-testing-platforms](ui-testing-platforms.md).
+- **Look, compare, iterate.** After building, screenshot the screen at 390px, ~768px, and desktop (dark mode, where it exists, in its own round), look at the images, and compare them against the brief: hierarchy, spacing rhythm, alignment, type, contrast, and the signature moment. Fix what's off, then re-shoot. Cap it at about 3 screenshots per round and 3 rounds; each image costs tokens. Tick the two lists below before calling UI work done; the `ui-ux` reviewer checks the same lists. Write screenshots to `.output/screenshots/` (e.g. `npx playwright screenshot --viewport-size=390,844 <url> .output/screenshots/x-390.png`). Desktop and mobile apps: see [ui-testing-platforms](ui-testing-platforms.md).
+
+### Anti-slop checklist
+
+Each item is a finding unless the brief asks for it:
+
+- [ ] Gradient backgrounds, gradient text, or glow on more than the one signature element.
+- [ ] Font, colour, radius or shadow that is not a design-system token (scattered one-off values).
+- [ ] Everything in cards; centred card grids where a list, table or rows read better.
+- [ ] More than one primary (filled, accent) action per area; accent colour used for decoration rather than meaning.
+- [ ] Shadow on every surface; borders and shadows stacked to separate the same thing twice.
+- [ ] The same fade or slide on every element; motion without a job.
+- [ ] Emoji as icons; mixed icon sets or stroke widths.
+- [ ] Filler copy: marketing tone in an app, "Welcome to …", labels that restate the heading, raw error text or codes.
+- [ ] Flat hierarchy: everything the same size and weight, or too many sizes; spacing off the spacing scale.
+
+### Before handing over
+
+- [ ] Matches the project's design brief and builds only from kit components (extended in the kit where needed).
+- [ ] Every state shown: loading, empty, error, success, disabled, offline or slow; long text and long lists checked.
+- [ ] Busy states block double actions (a button can't be clicked twice; a running job shows where it is).
+- [ ] Keyboard: everything reachable, visible focus, logical order, ESC closes overlays.
+- [ ] Contrast meets WCAG AA in light and dark; nothing conveyed by colour alone.
+- [ ] Phone width, ~768px and desktop screenshots looked at; no horizontal scroll.
+- [ ] `prefers-reduced-motion` honoured; text from the i18n files, no hard-coded copy.
 
 ## UX standards
 

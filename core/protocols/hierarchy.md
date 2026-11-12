@@ -38,8 +38,10 @@ Every delegation is a self-contained brief. The receiver has no other context.
 ```
 GOAL:        one sentence: the outcome, not the steps
 SCOPE:       files/dirs you may touch; anything outside requires escalation
-CONTEXT:     decisions, patterns to follow (file:line), pasted excerpts, guidelines that apply,
+CONTEXT:     decisions, pasted excerpts, guidelines that apply,
              the `graphify affected` list for changed symbols when a graph exists
+PATTERNS:    the project's "Patterns to follow" lines for this area + the canonical files to copy (file:line);
+             no second way, no invented pattern: escalate if none fits
 ACCEPTANCE:  verifiable checks, e.g. "tests X pass", "endpoint returns 404 on missing id"
 CONSTRAINTS: data sizes / performance expectations, no new deps, conventions
 WORKTREE:    none (shared checkout) | agent/<task-slug>
@@ -53,18 +55,20 @@ A brief without ACCEPTANCE is not a brief. If the receiver asks "which files?" o
 STATUS:      done | blocked | escalate
 CHANGES:     files touched + one line each
 EVIDENCE:    the commands run and their heavy-queue summaries
+PATTERNS:    per new piece, the existing file it follows, or "new: why" (only with the Lead's OK)
 DEVIATIONS:  anything that differs from the brief, and why
 OPEN:        questions, risks, follow-ups; things noticed but not changed
 ```
 
 Never claim "tests pass" without EVIDENCE. Never report done with failing or missing tests.
 
-## Audit: once, in two stages
+## Audit: once, in three stages
 
 The executor self-checks with targeted tests. The Lead then audits once:
 
 1. **Spec first.** Every ACCEPTANCE item met, nothing outside SCOPE. On a miss, bounce at once, without a quality pass.
-2. **Quality second.** Read the diff against the guidelines, performance included (merged loops, no lookups inside loops, an index for every new query, no N+1, bounded reads). Re-run only the targeted tests.
+2. **Patterns second.** Read the diff against the project's "Patterns to follow" and the report's PATTERNS: every new piece copies an existing pattern; a second way of doing something, an invented mechanism or a missing PATTERNS row bounces. Passing tests do not excuse a wrong shape. For a large UI or cross-cutting diff, a reviewer with fresh eyes may do this pass, given only the diff and the patterns list.
+3. **Quality third.** Read the diff against the guidelines, performance included (merged loops, no lookups inside loops, an index for every new query, no N+1, bounded reads). Re-run only the targeted tests.
 
 **Reject** with a numbered defect list (what, where, why, expected), sent to the **same** agent so it keeps its context. **Max 2 bounces**, each fixing the root cause. After that, do it yourself or hand it to the escalation agent with what was tried.
 

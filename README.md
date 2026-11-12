@@ -18,7 +18,7 @@ One source in `core/` is rendered for each tool by `deploy.py`. Works on Windows
 | `core/guidelines/` | Topic rules: coding-standards (loads every session), plus workflow, testing, performance, debugging, review-standards, codebase-graph, design-directions, motion-3d, ui-testing-platforms, git-and-versioning, security-privacy-logging, dependencies-supply-chain, angular-frontend, backend-nodejs, library-design, ux-ui-seo (on demand; their must-dos are a checklist in `rules.md`) |
 | `core/guidelines/languages/` | Language-specific rules (on demand): `README.md` index → one file per language (`javascript-typescript.md`, …) |
 | `core/roles/` | `lead` (your main session, loads every session); `executor`, `escalation` and the specialists `reviewer` / `security` / `tester` / `e2e` / `ui-ux` (rendered as subagents) |
-| `core/protocols/` | `hierarchy.md` (roles, briefs, the two-stage audit, worktree lifecycle; read by the Lead) · `agent-protocol.md` (the short part inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
+| `core/protocols/` | `hierarchy.md` (roles, briefs, the three-stage audit, worktree lifecycle; read by the Lead) · `agent-protocol.md` (the short part inlined into every agent) · `task-types.md` (feature, analyze, review, security, implement, test, refactor) · `teams.md` (multi-agent mechanics: `.team/` state, adversarial verify, dedup, stop conditions) |
 | `core/skills/` | Harness-neutral skills (`ionic-capacitor`, vendored) |
 | `core/bin/` | `heavy.py` (heavy-command queue) + `heavy_parsers.py` (output summaries) · `worktrees.py` (agent worktree list/apply/clean). Python stdlib only |
 | `adapters/claude-code/` | Claude-only extras: the `/setup` skill, `bin/session_cost.py` (token use per session and agent from the local logs) |
@@ -74,7 +74,7 @@ Flat on purpose, to keep token use low without dropping checks:
 How they work together:
 
 - The Lead hands down a full **brief** (goal, exact files, acceptance criteria) and gets back a **report** with evidence (the heavy-queue summaries).
-- **One audit, two stages:** spec compliance first (bounced at once on a miss), then quality, performance included. Rework goes back to the same agent, at most twice.
+- **One audit, three stages:** spec compliance first (bounced at once on a miss), then pattern conformance (every new piece copies an existing project pattern; a second way or an invented one bounces), then quality, performance included. Rework goes back to the same agent, at most twice.
 - **`max_parallel`** caps code-changing agents (default from settings; Pro 1, Max 3). The Lead asks once per session, at the first task that would spawn agents: the default, its recommendation for the task, or your own number.
 - **Worktrees** only when file lists overlap or a task is experimental, created by hand at `<workspace>/.worktrees/<repo>-<task>` (outside every repo; never the harness's built-in isolation). They share one `.git`. Their changes are applied to your checkout **uncommitted**, tested there, then the worktree and its `agent/*` branch are removed. A task isn't done while one of its worktrees exists.
 

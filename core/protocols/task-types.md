@@ -62,7 +62,7 @@ Owner: **Lead**; two `security` agents on the strong model, split by attack surf
 Owner: **Lead**.
 1. **Decompose** into precise tasks with `depends_on`, who builds each (Lead or executor), and acceptance criteria. Record them in `.team/findings.json`. Vague input gets resolved into tasks and confirmed before building.
 2. **Build**: the Lead does small tasks itself; independent tasks go to executors in parallel (within `max_parallel`), with disjoint SCOPE or a worktree. Dependency chains run in order.
-3. **Audit each** (hierarchy, two stages): spec first, then quality, slice green.
+3. **Audit each** (hierarchy, three stages): spec first, then pattern conformance, then quality, slice green.
 4. **Integrate** in `depends_on` order (worktree diffs applied uncommitted), re-run the full suite, fix regressions, clean up worktrees.
 
 ## test: find gaps, write tests (mutating)
