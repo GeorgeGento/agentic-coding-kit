@@ -266,6 +266,11 @@ class RunTests(unittest.TestCase):
         waiter.kill()
         waiter.communicate(timeout=RUN_TIMEOUT)
         holder.kill()
+        if os.name == "nt":
+            # No supervisor on Windows: the orphaned worker keeps the holder's
+            # pipes open, so stop it before draining them.
+            os.kill(self.worker_pids[-1], signal.SIGTERM)
+            self._wait_dead(self.worker_pids[-1])
         holder.communicate(timeout=RUN_TIMEOUT)
         following = self._spawn("exit 0")
         following.communicate(timeout=RUN_TIMEOUT)
@@ -320,6 +325,14 @@ class RunTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 75)
         self.assertIn("waiting for a slot", err)
         self.assertIn("run_in_background", err)
+
+    def test_backslashes_reach_shell_unchanged(self):
+        # Regression: on Windows, `bash -c <command>` went through list2cmdline and
+        # MSYS argv parsing, which halved backslashes (C:\\Users -> C:\Users).
+        proc = self._spawn(r"""printf '%s|' 'C:\\Users\\x' "a\\b" 'q"d'""")
+        out, err = proc.communicate(timeout=RUN_TIMEOUT)
+        self.assertEqual(proc.returncode, 0, err)
+        self.assertEqual(out, r'C:\\Users\\x|a\b|q"d|')
 
     def test_nested_call_skips_queue(self):
         self._hold_slot()

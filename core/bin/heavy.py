@@ -68,6 +68,7 @@ ENV_MAX_WAIT = "AW_HEAVY_MAX_WAIT"
 ENV_DIR = "AW_HEAVY_DIR"
 ENV_HELD = "AW_HEAVY_HELD"
 ENV_CMD = "AW_HEAVY_CMD"
+ENV_BASH_CMD = "AW_HEAVY_BASH_CMD"
 ENV_RAW = "HEAVY_RAW"
 ENV_LOG_DIR = "AW_HEAVY_LOG_DIR"
 ENV_SETTINGS = "AW_SETTINGS"
@@ -318,15 +319,19 @@ def _windows_bash() -> str:
     return str(git_bash) if git_bash.exists() else found or "bash"
 
 
-def _shell_argv(shell: str, command: str) -> list[str]:
+def _shell_argv(shell: str, command: str) -> tuple[list[str], dict[str, str]]:
+    """Shell argv plus extra env vars the shell needs to receive `command` intact."""
     if shell == "bash" and IS_WINDOWS:
-        return [_windows_bash(), "-c", command]
+        # list2cmdline and MSYS argv parsing disagree on backslashes (C:\\x -> C:\x),
+        # so hand the command over in the environment instead of on the command line.
+        script = f'set -- "${ENV_BASH_CMD}"; unset {ENV_BASH_CMD}; eval "$1"'
+        return [_windows_bash(), "-c", script], {ENV_BASH_CMD: command}
     if shell == "powershell":
         exe = shutil.which("powershell") or shutil.which("pwsh") or "powershell"
         # -EncodedCommand sidesteps Windows command-line quoting entirely.
         encoded = base64.b64encode(command.encode("utf-16-le")).decode("ascii")
-        return [exe, "-NoProfile", "-EncodedCommand", encoded]
-    return [shell, "-c", command]
+        return [exe, "-NoProfile", "-EncodedCommand", encoded], {}
+    return [shell, "-c", command], {}
 
 
 def _spawn_controlled(action: str, shell: str, command: str,
@@ -409,7 +414,9 @@ def _run_child(shell: str, command: str, cancelled: threading.Event | None = Non
     try:
         if cancelled is not None and cancelled.is_set():
             return EXIT_CANCELLED
-        child = subprocess.Popen(_shell_argv(shell, command), **kwargs)
+        argv, shell_env = _shell_argv(shell, command)
+        env.update(shell_env)
+        child = subprocess.Popen(argv, **kwargs)
     except FileNotFoundError:
         print(f"[heavy] shell not found: {shell}", file=sys.stderr)
         return EXIT_SHELL_MISSING
