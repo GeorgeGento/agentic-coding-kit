@@ -62,7 +62,7 @@ class ClaudeCodeDeployTests(DeployCase):
         self.assertOk(self.deploy("claude-code", self.target))
         executor = (self.target / "agents" / "executor.md").read_text(encoding="utf-8")
         self.assertTrue(executor.startswith("---\nname: executor\n"))
-        self.assertIn("model: claude-sonnet-5-5", executor)
+        self.assertIn("model: claude-sonnet-5-5\nautoCompactWindow: 700000\n---", executor)
         self.assertIn("# Agent Protocol", executor)
         self.assertNotIn("# Hierarchy Protocol", executor)
         escalation = (self.target / "agents" / "escalation.md").read_text(encoding="utf-8")
@@ -559,6 +559,23 @@ class ResolveSettingsTests(unittest.TestCase):
     def test_default_when_nothing_sets_max_parallel(self):
         settings = deploy.resolve_settings("claude-code", {"models": {}}, {}, None)
         self.assertEqual(settings.max_parallel, deploy.DEFAULT_MAX_PARALLEL)
+        self.assertIsNone(settings.auto_compact_window)
+
+    def test_user_auto_compact_window_overrides_profile(self):
+        profile = {**self.PROFILE, "auto_compact_window": 700000}
+        self.assertEqual(deploy.resolve_settings("claude-code", profile, {}, None)
+                         .auto_compact_window, 700000)
+        user = {"auto_compact_window": 500000}
+        self.assertEqual(deploy.resolve_settings("claude-code", profile, user, None)
+                         .auto_compact_window, 500000)
+
+
+class RenderAgentTests(unittest.TestCase):
+    ROLE = "---\nname: x\ndescription: d\n---\nbody"
+
+    def test_claude_agent_without_window_has_no_window_line(self):
+        text = deploy.render_agent(deploy.TOOLS["claude-code"], self.ROLE, "m", "", Path("t"))
+        self.assertNotIn("autoCompactWindow", text)
 
 
 class MergeHookTests(unittest.TestCase):

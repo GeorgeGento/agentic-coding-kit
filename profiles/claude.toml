@@ -7,6 +7,11 @@
 # asks once per session; `--max-parallel N` and settings.toml override this.
 max_parallel = 1
 
+# Auto-compact window (tokens) written into every subagent's frontmatter as
+# `autoCompactWindow`, so long agent runs compact before the models' ~967k default.
+# Range 100000-1000000; `auto_compact_window` in settings.toml overrides it.
+auto_compact_window = 700000
+
 [models]
 # The Lead is your main session. deploy.py writes it into settings.json only when
 # settings.toml names it; otherwise it prints a reminder. Switch to Opus via /model

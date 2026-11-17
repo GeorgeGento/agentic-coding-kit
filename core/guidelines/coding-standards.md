@@ -4,8 +4,8 @@ General, language-agnostic standards for writing and editing code. Read this bef
 
 ## Core principles
 
+- **Ladder before code**, stop at first fit: needed? → in the codebase (grep before a new parser, table, or allow-list; reuse/promote it) → stdlib/framework → installed dependency → minimum code. Never cut validation, security, accessibility, or required tests. Copy only where each side must enforce independently (e.g. a Rust/TS pair), documented.
 - **No code duplication** unless genuinely required — i.e. two things that *look* alike but are semantically independent and will evolve separately. Extract shared logic into utilities, base classes, or reusable components. **Extract on the third repeat at the latest:** a block shape seen 3+ times (e.g. resolve → check → throw → call) becomes a helper in the same change.
-- **Grep before writing a parser, table, or allow-list.** Reuse or promote the existing one. The only deliberate copies are ones where each side must enforce independently (e.g. a Rust/TS pair), documented as such.
 - **No abstraction without a second user.** No interface / port / abstract class without a second implementation or a test fake that needs it (say which in one line). No factory that only returns `inject(X)`.
 - **Derive key lists** from the type or a const object (`as const` / `satisfies`); never hand-maintain a parallel list.
 - **Modularity and reusability first.** Design every new piece so it can be reused, not welded to its first consumer.

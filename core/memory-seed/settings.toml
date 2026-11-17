@@ -13,6 +13,10 @@
 # Full heavy-queue logs kept per project in ~/.agent-workflows/logs/.
 # heavy_log_keep = 20
 
+# Auto-compact window (tokens) for every Claude Code subagent (frontmatter
+# `autoCompactWindow`, range 100000-1000000).
+# auto_compact_window = 700000
+
 # Models per tool and role. Setting `lead` for claude-code also writes it into
 # ~/.claude/settings.json. Specialists without their own key use `specialist`.
 # [models.claude-code]

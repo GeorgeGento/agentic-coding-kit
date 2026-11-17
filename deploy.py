@@ -150,6 +150,7 @@ class Settings:
     models: dict[str, str]
     max_parallel: int
     lead_chosen: bool  # True when the user's settings.toml names the Lead model
+    auto_compact_window: int | None = None  # subagent auto-compact window (Claude Code only)
 
 
 def resolve_settings(tool_name: str, profile: dict, user: dict,
@@ -171,7 +172,9 @@ def resolve_settings(tool_name: str, profile: dict, user: dict,
         models.setdefault(role, specialist)
     max_parallel = (max_parallel_flag or user.get("max_parallel")
                     or profile.get("max_parallel") or DEFAULT_MAX_PARALLEL)
-    return Settings(models, int(max_parallel), bool(user_models.get(MAIN_SESSION_ROLE)))
+    window = user.get("auto_compact_window") or profile.get("auto_compact_window")
+    return Settings(models, int(max_parallel), bool(user_models.get(MAIN_SESSION_ROLE)),
+                    int(window) if window else None)
 
 
 def split_frontmatter(text: str) -> tuple[dict[str, str], str]:
@@ -222,7 +225,7 @@ def render_instructions(tool: Tool, rules: str, target: Path,
 
 
 def render_agent(tool: Tool, role_text: str, model: str, protocol_text: str,
-                 target: Path) -> str:
+                 target: Path, auto_compact_window: int | None = None) -> str:
     """Render a role file as a subagent definition for the given harness.
 
     The protocol is inlined so each agent is self-contained: a subagent starts
@@ -254,7 +257,9 @@ def render_agent(tool: Tool, role_text: str, model: str, protocol_text: str,
         return (f"---\ndescription: {meta['description']}\nmode: subagent\n{model_line}---\n\n"
                 f"{instructions}")
     front = "\n".join(f"{k}: {v}" for k, v in meta.items())
-    return f"---\n{front}\nmodel: {model or 'inherit'}\n---\n\n{instructions}"
+    # A plain integer: Claude Code reads a `700k` suffix in frontmatter as 700.
+    window_line = f"\nautoCompactWindow: {auto_compact_window}" if auto_compact_window else ""
+    return f"---\n{front}\nmodel: {model or 'inherit'}{window_line}\n---\n\n{instructions}"
 
 
 def hook_command(heavy_path: Path) -> str:
@@ -435,14 +440,15 @@ class Deployer:
         self._write(self.target / self.tool.instructions_file,
                     render_instructions(self.tool, rules, self.target, max_parallel))
 
-    def deploy_agents(self, models: dict[str, str]) -> None:
+    def deploy_agents(self, models: dict[str, str], auto_compact_window: int | None = None) -> None:
         protocol = AGENT_PROTOCOL.read_text(encoding="utf-8")
         for role_path in sorted((CORE / "roles").glob("*.md")):
             role = role_path.stem
             if role == MAIN_SESSION_ROLE:
                 continue
             content = render_agent(self.tool, role_path.read_text(encoding="utf-8"),
-                                   models.get(role, ""), protocol, self.target)
+                                   models.get(role, ""), protocol, self.target,
+                                   auto_compact_window)
             self._write(self.target / "agents" / f"{role}{self.tool.agent_ext}", content)
         for name in RETIRED_AGENTS:
             old = self.target / "agents" / f"{name}{self.tool.agent_ext}"
@@ -588,7 +594,7 @@ class Deployer:
                      "using profile defaults (run /setup to choose)")
         self.deploy_owned()
         self.deploy_instructions(settings.max_parallel)
-        self.deploy_agents(models)
+        self.deploy_agents(models, settings.auto_compact_window)
         self.deploy_skills()
         self.deploy_bin()
         self.deploy_memory()
